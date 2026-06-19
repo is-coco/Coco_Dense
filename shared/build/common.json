@@ -1,0 +1,19 @@
+{
+  "appId": "com.coco.cocodense",
+  "productName": "Coco Dense",
+  "compression": "store",
+  "files": [
+    "shared/**/*",
+    "platforms/**/*",
+    "assets/**/*",
+    "README.md",
+    "main.js",
+    "preload.js"
+  ],
+  "electronDownload": {
+    "mirror": "https://npmmirror.com/mirrors/electron/"
+  },
+  "directories": {
+    "output": "dist"
+  }
+}

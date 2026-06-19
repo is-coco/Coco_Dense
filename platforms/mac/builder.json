@@ -1,0 +1,15 @@
+{
+  "extends": "shared/build/common.json",
+  "mac": {
+    "icon": "assets/app-icon.icns",
+    "category": "public.app-category.productivity",
+    "target": [
+      "dmg",
+      "zip"
+    ],
+    "identity": null
+  },
+  "dmg": {
+    "artifactName": "${productName}-${version}-${arch}.${ext}"
+  }
+}

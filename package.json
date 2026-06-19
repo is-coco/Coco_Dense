@@ -1,0 +1,24 @@
+{
+  "name": "coco-dense",
+  "version": "0.1.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --config platforms/mac/builder.json --mac dmg zip",
+    "dist:mac:dir": "electron-builder --config platforms/mac/builder.json --mac dir",
+    "dist:win": "electron-builder --config platforms/win/builder.json --win nsis",
+    "dist:local": "powershell -ExecutionPolicy Bypass -File build-local.ps1",
+    "dist:unpacked": "powershell -ExecutionPolicy Bypass -File build-unpacked.ps1",
+    "icon:mac": "bash scripts/make-mac-icon.sh"
+  },
+  "devDependencies": {
+    "electron": "^34.1.0",
+    "electron-builder": "^24.13.3",
+    "rcedit": "^5.0.2"
+  },
+  "dependencies": {
+    "pinyin-pro": "^3.28.1"
+  }
+}

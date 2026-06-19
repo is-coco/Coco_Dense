@@ -1,0 +1,23 @@
+{
+  "extends": "shared/build/common.json",
+  "win": {
+    "icon": "assets/app-icon.ico",
+    "target": [
+      "nsis"
+    ],
+    "artifactName": "${productName}-${version}-Setup.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "allowElevation": true,
+    "installerIcon": "assets/app-icon.ico",
+    "uninstallerIcon": "assets/app-icon.ico",
+    "installerHeaderIcon": "assets/app-icon.ico",
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Coco Dense",
+    "artifactName": "${productName}-${version}-Setup.${ext}"
+  }
+}
