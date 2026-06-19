@@ -5,9 +5,9 @@ module.exports = {
   isMac: false,
   isWindows: true,
   appUserModelId: "com.coco.cocodense",
-  biometricLabel: "生物识别",
-  biometricPromptEnable: "启用 Coco Dense 的生物识别解锁",
-  biometricPromptUnlock: "使用生物识别解锁 Coco Dense",
+  biometricLabel: "Touch ID识别",
+  biometricPromptEnable: "启用 Coco Dense 的 Touch ID识别解锁",
+  biometricPromptUnlock: "使用 Touch ID识别解锁 Coco Dense",
   iconPath: path.join(__dirname, "..", "..", "assets", "app-icon.png"),
   browserWindow: {
     frame: false,

@@ -893,7 +893,7 @@ function biometricStatus() {
     configured: supported && state.exists && !state.corrupted,
     corrupted: state.corrupted,
     updatedAt: state.exists && !state.corrupted ? state.data.updatedAt : "",
-    unavailableReason: supported ? "" : isMac ? "当前设备或系统不支持 Touch ID 解锁" : "当前系统不支持生物识别解锁",
+    unavailableReason: supported ? "" : isMac ? "当前设备或系统不支持 Touch ID 解锁" : "当前系统不支持 Touch ID识别解锁",
   };
 }
 

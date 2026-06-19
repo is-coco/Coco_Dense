@@ -1249,7 +1249,7 @@ function syncBiometricSettings() {
 
   if (biometricStatusText) {
     biometricStatusText.textContent = !supported
-      ? status.unavailableReason || (isMac ? "当前设备或系统不支持 Touch ID 解锁。" : "当前系统不支持生物识别解锁。")
+      ? status.unavailableReason || (isMac ? "当前设备或系统不支持 Touch ID 解锁。" : "当前系统不支持 Touch ID识别解锁。")
       : corrupted
         ? "配置文件异常，请关闭后重新启用。"
         : configured
@@ -1262,7 +1262,7 @@ function syncBiometricSettings() {
   }
   if (biometricToggleBtn) {
     biometricToggleBtn.disabled = !supported || !state.unlocked;
-    biometricToggleBtn.textContent = configured ? "关闭生物识别" : "启用生物识别";
+    biometricToggleBtn.textContent = configured ? "关闭 Touch ID识别" : "启用 Touch ID识别";
   }
   syncAuthBiometricAction();
 }
