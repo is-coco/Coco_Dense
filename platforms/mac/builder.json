@@ -3,6 +3,7 @@
   "mac": {
     "icon": "assets/app-icon.icns",
     "category": "public.app-category.productivity",
+    "artifactName": "Coco.Dense-${version}-${arch}.${ext}",
     "target": [
       "dmg",
       "zip"
@@ -10,6 +11,6 @@
     "identity": null
   },
   "dmg": {
-    "artifactName": "${productName}-${version}-${arch}.${ext}"
+    "artifactName": "Coco.Dense-${version}-${arch}.${ext}"
   }
 }

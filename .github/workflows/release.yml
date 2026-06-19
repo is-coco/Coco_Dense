@@ -9,10 +9,6 @@ on:
 permissions:
   contents: write
 
-env:
-  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 jobs:
   build-mac:
     runs-on: macos-latest
@@ -72,6 +68,9 @@ jobs:
       - build-mac
       - build-win
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Download macOS artifacts
         uses: actions/download-artifact@v4
