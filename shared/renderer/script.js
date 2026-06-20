@@ -181,6 +181,20 @@ const saveRecoveryBtn = document.getElementById("saveRecoveryBtn");
 const clearRecoveryAnswersBtn = document.getElementById("clearRecoveryAnswersBtn");
 const unlockPrimaryBtn = unlockForm.querySelector(".primary-btn");
 const authHelper = unlockForm.querySelector(".helper");
+const avatarPreview = document.getElementById("avatarPreview");
+const uploadAvatarBtn = document.getElementById("uploadAvatarBtn");
+const deleteAvatarBtn = document.getElementById("deleteAvatarBtn");
+const avatarCropModal = document.getElementById("avatarCropModal");
+const avatarCropContainer = document.getElementById("avatarCropContainer");
+const avatarCropImage = document.getElementById("avatarCropImage");
+const avatarCropMask = document.getElementById("avatarCropMask");
+const closeAvatarCropBtn = document.getElementById("closeAvatarCropBtn");
+const cancelAvatarCropBtn = document.getElementById("cancelAvatarCropBtn");
+const confirmAvatarCropBtn = document.getElementById("confirmAvatarCropBtn");
+const authAvatar = document.getElementById("authAvatar");
+const welcomeAppIcon = document.getElementById("welcomeAppIcon");
+const welcomeAppIconDefault = "../../assets/app-icon.png";
+const authLockIcon = document.getElementById("authLockIcon");
 const closeWindowBtn = document.getElementById("closeWindowBtn");
 const minimizeWindowBtn = document.getElementById("minimizeWindowBtn");
 const maximizeWindowBtn = document.getElementById("maximizeWindowBtn");
@@ -346,6 +360,7 @@ const state = {
   updateReminderShownVersion: "",
   updateAutoChecked: false,
   confirmResolver: null,
+  avatarData: null,
 };
 
 function normalizePriority(priority) {
@@ -904,6 +919,7 @@ function confirmWithin(actionKey, firstMessage, onConfirm, windowMs = 3000) {
   const pending = state.pendingActions[actionKey];
   if (pending && pending.expiresAt > now) {
     clearPendingAction(actionKey);
+    toast.classList.add("hidden");
     onConfirm();
     return;
   }
@@ -934,6 +950,254 @@ function confirmWithin(actionKey, firstMessage, onConfirm, windowMs = 3000) {
 function makeId(site) {
   return `${site || "entry"}-${Date.now().toString(36)}`;
 }
+
+
+// 头像相关函数
+let avatarCropState = { x: 0, y: 0, scale: 1, dragging: false, xOnly: false, startX: 0, startY: 0, imgW: 0, imgH: 0 };
+
+function clampCropPosition() {
+  if (!avatarCropContainer || !avatarCropImage) return;
+  const containerW = avatarCropContainer.offsetWidth;
+  const containerH = avatarCropContainer.offsetHeight;
+  const imgW = avatarCropState.imgW * avatarCropState.scale;
+  const imgH = avatarCropState.imgH * avatarCropState.scale;
+  const maskSize = 200;
+  
+  // 限制拖拽范围：图片必须覆盖裁剪区域（中心mask）
+  const maskX = (containerW - maskSize) / 2;
+  const maskY = (containerH - maskSize) / 2;
+  const minX = maskX + maskSize - imgW;
+  const minY = maskY + maskSize - imgH;
+  const maxX = maskX;
+  const maxY = maskY;
+  
+  avatarCropState.x = Math.max(minX, Math.min(maxX, avatarCropState.x));
+  avatarCropState.y = Math.max(minY, Math.min(maxY, avatarCropState.y));
+}
+
+async function loadAvatar() {
+  const result = await window.vault?.getAvatar?.();
+  if (result?.ok && result.avatar) {
+    state.avatarData = result.avatar;
+    applyAvatar(result.avatar);
+  } else {
+    state.avatarData = null;
+    applyAvatar(null);
+  }
+}
+
+function applyAvatar(base64Data) {
+  const dataUrl = base64Data ? `data:image/png;base64,${base64Data}` : "";
+  
+  // 更新设置页面预览
+  if (avatarPreview) {
+    if (base64Data) {
+      avatarPreview.innerHTML = `<img src="${dataUrl}" alt="头像" />`;
+      deleteAvatarBtn?.classList.remove("hidden");
+    } else {
+      avatarPreview.innerHTML = `<svg class="avatar-placeholder-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12Zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v1.2c0 .7.5 1.2 1.2 1.2h16.8c.7 0 1.2-.5 1.2-1.2v-1.2c0-3.2-6.4-4.8-9.6-4.8Z" fill="currentColor"/></svg>`;
+      deleteAvatarBtn?.classList.add("hidden");
+    }
+  }
+  
+  // 更新锁定页面
+  if (authAvatar && authLockIcon) {
+    const authMarkEl = authAvatar.closest(".auth-mark");
+    if (base64Data) {
+      authAvatar.removeAttribute("src");
+      authAvatar.src = dataUrl;
+      authAvatar.classList.remove("hidden");
+      authLockIcon.classList.add("hidden");
+      if (authMarkEl) authMarkEl.style.background = "transparent";
+    } else {
+      authAvatar.removeAttribute("src");
+      authAvatar.classList.add("hidden");
+      authLockIcon.classList.remove("hidden");
+      if (authMarkEl) authMarkEl.style.background = "";
+    }
+  }
+
+  // 更新欢迎页图标
+  if (welcomeAppIcon) {
+    const markContainer = welcomeAppIcon.closest(".empty-detail-mark");
+    if (base64Data) {
+      welcomeAppIcon.src = dataUrl;
+      welcomeAppIcon.classList.add("avatar-mode");
+      markContainer?.classList.add("avatar-active");
+    } else {
+      welcomeAppIcon.removeAttribute("src");
+      welcomeAppIcon.src = welcomeAppIconDefault;
+      welcomeAppIcon.classList.remove("avatar-mode");
+      markContainer?.classList.remove("avatar-active");
+    }
+  }
+}
+
+function openAvatarCropModal(imageSrc) {
+  if (!avatarCropModal || !avatarCropImage || !avatarCropContainer) return;
+  
+  avatarCropImage.src = imageSrc;
+  avatarCropModal.classList.remove("hidden");
+  avatarCropModal.setAttribute("aria-hidden", "false");
+  
+  // 等图片加载后初始化裁剪位置
+  avatarCropImage.onload = () => {
+    const containerW = avatarCropContainer.offsetWidth;
+    const containerH = avatarCropContainer.offsetHeight;
+    const imgW = avatarCropImage.naturalWidth;
+    const imgH = avatarCropImage.naturalHeight;
+    
+    avatarCropState.imgW = imgW;
+    avatarCropState.imgH = imgH;
+    
+    // 计算缩放比例，确保图片能覆盖裁剪区域
+    const maskSize = 200;
+    const scaleX = containerW / imgW;
+    const scaleY = containerH / imgH;
+    const fitScale = Math.max(scaleX, scaleY);
+    const maskScale = Math.max(maskSize / imgW, maskSize / imgH);
+    const scale = Math.max(maskScale, fitScale * 0.6);
+    
+    avatarCropState.scale = scale;
+    avatarCropState.x = (containerW - imgW * scale) / 2;
+    avatarCropState.y = (containerH - imgH * scale) / 2;
+    
+    updateCropImagePosition();
+  };
+}
+
+function updateCropImagePosition() {
+  if (!avatarCropImage) return;
+  clampCropPosition();
+  avatarCropImage.style.width = `${avatarCropState.imgW * avatarCropState.scale}px`;
+  avatarCropImage.style.height = `${avatarCropState.imgH * avatarCropState.scale}px`;
+  avatarCropImage.style.left = `${avatarCropState.x}px`;
+  avatarCropImage.style.top = `${avatarCropState.y}px`;
+}
+
+function closeAvatarCropModal() {
+  if (!avatarCropModal) return;
+  avatarCropModal.classList.add("hidden");
+  avatarCropModal.setAttribute("aria-hidden", "true");
+}
+
+async function confirmAvatarCrop() {
+  if (!avatarCropContainer || !avatarCropImage) return;
+  
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const outputSize = 256;
+  canvas.width = outputSize;
+  canvas.height = outputSize;
+  
+  const containerW = avatarCropContainer.offsetWidth;
+  const containerH = avatarCropContainer.offsetHeight;
+  const maskSize = 200;
+  const maskX = (containerW - maskSize) / 2;
+  const maskY = (containerH - maskSize) / 2;
+  
+  // 计算裁剪区域在原图中的位置
+  const imgX = (maskX - avatarCropState.x) / avatarCropState.scale;
+  const imgY = (maskY - avatarCropState.y) / avatarCropState.scale;
+  const imgSize = maskSize / avatarCropState.scale;
+  
+  ctx.drawImage(
+    avatarCropImage,
+    imgX, imgY, imgSize, imgSize,
+    0, 0, outputSize, outputSize
+  );
+  
+  const base64Data = canvas.toDataURL("image/png").split(",")[1];
+  console.log("Avatar crop data length:", base64Data?.length);
+  const result = await window.vault?.saveAvatar?.(base64Data);
+  console.log("Avatar save result:", result);
+  
+  if (result?.ok) {
+    state.avatarData = base64Data;
+    applyAvatar(base64Data);
+    showToast("头像已保存");
+  } else {
+    showToast(result?.error || "保存头像失败");
+  }
+  
+  closeAvatarCropModal();
+  touchActivity();
+}
+
+// 裁剪区域拖拽
+// 双指捏合缩放（以容器中心为锚点）+ 双指滚动平移
+avatarCropContainer?.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const containerW = avatarCropContainer.offsetWidth;
+  const containerH = avatarCropContainer.offsetHeight;
+  const minScale = Math.max(200 / avatarCropState.imgW, 200 / avatarCropState.imgH);
+
+  if (e.ctrlKey) {
+    // 捏合缩放，以容器中心为锚点
+    const oldScale = avatarCropState.scale;
+    const factor = e.deltaY > 0 ? 0.96 : 1.04;
+    const newScale = Math.max(minScale, Math.min(5, oldScale * factor));
+    const ratio = newScale / oldScale;
+    const cx = containerW / 2;
+    const cy = containerH / 2;
+    avatarCropState.x = cx - ratio * (cx - avatarCropState.x);
+    avatarCropState.y = cy - ratio * (cy - avatarCropState.y);
+    avatarCropState.scale = newScale;
+  } else {
+    // 双指滚动平移
+    avatarCropState.x -= e.deltaX;
+    avatarCropState.y -= e.deltaY;
+  }
+  updateCropImagePosition();
+}, { passive: false });
+
+// 鼠标拖拽移动裁剪区域
+avatarCropContainer?.addEventListener("mousedown", (e) => {
+  avatarCropState.dragging = true;
+  avatarCropState.xOnly = false;
+  avatarCropState.startX = e.clientX - avatarCropState.x;
+  avatarCropState.startY = e.clientY - avatarCropState.y;
+});
+
+window.addEventListener("mousemove", (e) => {
+  if (!avatarCropState.dragging) return;
+  avatarCropState.x = e.clientX - avatarCropState.startX;
+  if (!avatarCropState.xOnly) {
+    avatarCropState.y = e.clientY - avatarCropState.startY;
+  }
+  updateCropImagePosition();
+});
+
+window.addEventListener("mouseup", () => {
+  avatarCropState.dragging = false;
+  avatarCropState.xOnly = false;
+});
+
+// 三指触控拖拽（仅左右移动）
+avatarCropContainer?.addEventListener("touchstart", (e) => {
+  if (e.touches.length === 3) {
+    e.preventDefault();
+    avatarCropState.dragging = true;
+    avatarCropState.xOnly = true;
+    avatarCropState.startX = e.touches[0].clientX - avatarCropState.x;
+  }
+}, { passive: false });
+
+avatarCropContainer?.addEventListener("touchmove", (e) => {
+  if (!avatarCropState.dragging || !avatarCropState.xOnly) return;
+  if (e.touches.length < 3) return;
+  e.preventDefault();
+  avatarCropState.x = e.touches[0].clientX - avatarCropState.startX;
+  updateCropImagePosition();
+}, { passive: false });
+
+avatarCropContainer?.addEventListener("touchend", (e) => {
+  if (e.touches.length === 0 && avatarCropState.xOnly) {
+    avatarCropState.dragging = false;
+    avatarCropState.xOnly = false;
+  }
+});
+
 
 function getVaultPayload(options = {}) {
   const shouldTouchUpdatedAt = options.touchUpdatedAt !== false;
@@ -974,7 +1238,7 @@ function touchActivity() {
   }, autoLockMs);
 }
 
-function lockVaultSilently() {
+function resetVaultState() {
   clearTimeout(state.autoLockTimer);
   clearTimeout(state.clipboardTimer);
   clearCloudSyncTimer();
@@ -1000,37 +1264,18 @@ function lockVaultSilently() {
   clearForm();
   clearSensitiveInputs();
   syncEmptyDetailState();
-  window.vault?.lockVault?.({ silent: true });
   refreshStatusText();
+  // 从磁盘重新加载头像，确保状态一致
+  loadAvatar();
+}
+
+function lockVaultSilently() {
+  resetVaultState();
+  window.vault?.lockVault?.({ silent: true });
 }
 
 function lockVaultManually() {
-  clearTimeout(state.autoLockTimer);
-  clearTimeout(state.clipboardTimer);
-  clearCloudSyncTimer();
-  state.cloudCheckBusy = false;
-  state.syncBusy = false;
-  state.syncError = "";
-  if (window.vault?.copyText) {
-    window.vault.copyText("");
-  } else {
-    navigator.clipboard?.writeText("");
-  }
-  state.unlocked = false;
-  state.entries = [];
-  state.activeId = "";
-  state.editTags = [];
-  state.vaultMeta = null;
-  state.readPasswordVisible = false;
-  resetDetailSurface();
-  closeChangePasswordModal();
-  changePasswordError.textContent = "";
-  searchInput.value = "";
-  renderEntries();
-  clearForm();
-  clearSensitiveInputs();
-  syncEmptyDetailState();
-  refreshStatusText();
+  resetVaultState();
   window.vault?.lockVault?.({ silent: false });
 }
 
@@ -2759,7 +3004,7 @@ async function createFolder(options = {}) {
       input.setSelectionRange(length, length);
     }
   });
-  persistVault();
+  await persistVault();
   return folder;
 }
 
@@ -3360,6 +3605,7 @@ async function initAuthState() {
   state.hasVaultFile = Boolean(status?.hasVault);
   state.vaultCorrupted = Boolean(status?.corrupted);
   await refreshRecoveryStatus();
+  await loadAvatar();
   await refreshBiometricStatus();
   await refreshDataKeyStatus();
   await refreshWebdavConfig();
@@ -3954,6 +4200,7 @@ async function upsertEntry() {
     return;
   }
 
+  const existingEntry = getActiveEntry();
   const nextEntry = {
     id: state.activeId || makeId(site),
     site,
@@ -3962,13 +4209,13 @@ async function upsertEntry() {
     url: urlInput.value.trim(),
     tags: state.editTags.join(" / "),
     notes: notesInput.value.trim(),
-    favorite: getActiveEntry()?.favorite || false,
-    folderId: getActiveEntry()?.folderId || "",
-    pinned: getActiveEntry()?.pinned || pinnedToggle?.getAttribute("aria-pressed") === "true",
+    favorite: existingEntry?.favorite || false,
+    folderId: existingEntry?.folderId || "",
+    pinned: existingEntry?.pinned || pinnedToggle?.getAttribute("aria-pressed") === "true",
     priority: normalizePriority(state.activePriority),
-    createdAt: getActiveEntry()?.createdAt || new Date().toISOString(),
+    createdAt: existingEntry?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    lastUsedAt: getActiveEntry()?.lastUsedAt || new Date().toISOString(),
+    lastUsedAt: existingEntry?.lastUsedAt || "",
     status: "已同步",
   };
 
@@ -3985,6 +4232,42 @@ async function upsertEntry() {
   setDetailMode("read");
   await refreshVaultAfterMutation("密码已保存");
 }
+
+
+// 头像事件
+uploadAvatarBtn?.addEventListener("click", async () => {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/*";
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => openAvatarCropModal(ev.target.result);
+    reader.readAsDataURL(file);
+  };
+  input.click();
+  touchActivity();
+});
+
+deleteAvatarBtn?.addEventListener("click", async () => {
+  const result = await window.vault?.deleteAvatar?.();
+  if (result?.ok) {
+    state.avatarData = null;
+    applyAvatar(null);
+    showToast("头像已删除");
+  } else {
+    showToast(result?.error || "删除头像失败");
+  }
+  touchActivity();
+});
+
+closeAvatarCropBtn?.addEventListener("click", closeAvatarCropModal);
+cancelAvatarCropBtn?.addEventListener("click", closeAvatarCropModal);
+confirmAvatarCropBtn?.addEventListener("click", confirmAvatarCrop);
+avatarCropModal?.addEventListener("click", (event) => {
+  if (event.target === avatarCropModal) closeAvatarCropModal();
+});
 
 unlockForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -4861,6 +5144,8 @@ window.vault?.onClearAuth?.(() => {
   refreshRecoveryStatus();
   refreshDataKeyStatus();
   state.updateAutoChecked = false;
+  // 从磁盘重新加载头像，确保跨窗口状态同步
+  loadAvatar();
 });
 
 window.vault?.onUpdateDownloadProgress?.((progress) => {

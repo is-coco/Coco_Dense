@@ -2562,6 +2562,43 @@ ipcMain.handle("update:cancelDownload", () => {
       return { ok: false, error: "无法打开网址" };
     }
   });
+
+  // 头像相关
+  ipcMain.handle("avatar:get", () => {
+    const avatarPath = path.join(app.getPath("userData"), "avatar.png");
+    if (!fs.existsSync(avatarPath)) return { ok: true, avatar: null };
+    try {
+      const data = fs.readFileSync(avatarPath);
+      return { ok: true, avatar: data.toString("base64") };
+    } catch {
+      return { ok: true, avatar: null };
+    }
+  });
+
+  ipcMain.handle("avatar:save", (_event, base64Data) => {
+    try {
+      const avatarPath = path.join(app.getPath("userData"), "avatar.png");
+      console.log("Avatar save path:", avatarPath);
+      console.log("Avatar data length:", base64Data?.length);
+      const buffer = Buffer.from(base64Data, "base64");
+      fs.writeFileSync(avatarPath, buffer);
+      console.log("Avatar saved successfully");
+      return { ok: true };
+    } catch (error) {
+      console.error("Avatar save error:", error);
+      return { ok: false, error: error?.message || "保存头像失败" };
+    }
+  });
+
+  ipcMain.handle("avatar:delete", () => {
+    try {
+      const avatarPath = path.join(app.getPath("userData"), "avatar.png");
+      if (fs.existsSync(avatarPath)) fs.unlinkSync(avatarPath);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error?.message || "删除头像失败" };
+    }
+  });
 }
 
 function createLoginWindow() {

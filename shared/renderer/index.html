@@ -32,7 +32,8 @@
               <h1>密码保险箱</h1>
             </div>
             <div class="auth-mark" aria-label="锁定状态">
-              <svg class="mark-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <img class="auth-avatar hidden" id="authAvatar" src="" alt="头像" />
+              <svg class="mark-icon" id="authLockIcon" viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="M8.5 10V8.2a3.5 3.5 0 0 1 7 0V10"
                   fill="none"
@@ -342,7 +343,7 @@
               <div class="detail-panel">
                 <div class="empty-detail hidden" id="emptyDetailState">
                   <div class="empty-detail-mark">
-                    <img src="../../assets/app-icon.png" alt="Coco Dense" />
+                    <img src="../../assets/app-icon.png" alt="Coco Dense" id="welcomeAppIcon" />
                   </div>
                   <p class="empty-detail-title">Coco Dense</p>
                 </div>
@@ -526,6 +527,11 @@
                             </select>
                           </label>
 
+                          <label class="setting-card password-length-card">
+                            <span>生成密码长度</span>
+                            <input id="passwordLengthSetting" type="number" min="8" max="40" step="1" />
+                          </label>
+
                           <div class="setting-card recovery-setting">
                             <div class="recovery-setting-head">
                               <div>
@@ -636,10 +642,21 @@
 
                       <section class="settings-page hidden" data-settings-page="general">
                         <div class="settings-grid">
-                          <label class="setting-card">
-                            <span>生成密码长度</span>
-                            <input id="passwordLengthSetting" type="number" min="1" max="40" step="1" />
-                          </label>
+                          <div class="setting-card avatar-setting">
+                            <span>头像</span>
+                            <p>上传个人头像，会显示在锁定页面</p>
+                            <div class="avatar-preview-row">
+                              <div class="avatar-preview" id="avatarPreview">
+                                <svg class="avatar-placeholder-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                  <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12Zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v1.2c0 .7.5 1.2 1.2 1.2h16.8c.7 0 1.2-.5 1.2-1.2v-1.2c0-3.2-6.4-4.8-9.6-4.8Z" fill="currentColor"/>
+                                </svg>
+                              </div>
+                              <div class="avatar-actions">
+                                <button class="secondary-btn" type="button" id="uploadAvatarBtn">选择头像</button>
+                                <button class="danger-outline-btn hidden" type="button" id="deleteAvatarBtn">删除头像</button>
+                              </div>
+                            </div>
+                          </div>
 
                           <label class="setting-card switch-card">
                             <span>复制前二次确认</span>
@@ -794,6 +811,29 @@
           <button class="nav-item" type="button">设置</button>
         </nav>
       </section>
+
+      <!-- 头像裁剪模态框 -->
+      <div class="modal-backdrop hidden" id="avatarCropModal" aria-hidden="true">
+        <div class="modal-sheet avatar-crop-sheet">
+          <div class="modal-head">
+            <h2>裁剪头像</h2>
+            <button class="icon-btn" type="button" id="closeAvatarCropBtn" aria-label="关闭">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12 19 6.4 17.6 5 12 10.6Z" fill="currentColor"/></svg>
+            </button>
+          </div>
+          <div class="avatar-crop-body">
+            <div class="avatar-crop-container" id="avatarCropContainer">
+              <img id="avatarCropImage" src="" alt="待裁剪头像" />
+              <div class="avatar-crop-mask" id="avatarCropMask"></div>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button class="secondary-btn" type="button" id="cancelAvatarCropBtn">取消</button>
+            <button class="primary-btn" type="button" id="confirmAvatarCropBtn">确认裁剪</button>
+          </div>
+        </div>
+      </div>
+
     </main>
 
     <div class="modal-backdrop hidden" id="changePasswordModal" aria-hidden="true">

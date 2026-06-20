@@ -58,6 +58,9 @@ contextBridge.exposeInMainWorld("vault", {
   recoverWithAnswers: (answers, dataKey) => ipcRenderer.invoke("vault:recoverWithAnswers", answers, dataKey),
   exportVaultFile: (payload) => ipcRenderer.invoke("vault:exportFile", "", payload),
   importVaultFile: (masterPassword, dataKey) => ipcRenderer.invoke("vault:importFile", masterPassword, dataKey),
+  getAvatar: () => ipcRenderer.invoke("avatar:get"),
+  saveAvatar: (base64Data) => ipcRenderer.invoke("avatar:save", base64Data),
+  deleteAvatar: () => ipcRenderer.invoke("avatar:delete"),
   onShowVault: (callback) => {
     const handler = (_event, payload) => callback?.(payload);
     ipcRenderer.on("app:showVault", handler);
