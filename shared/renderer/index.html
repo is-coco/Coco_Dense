@@ -646,10 +646,6 @@
                             <input id="copyConfirmSetting" type="checkbox" />
                           </label>
 
-                          <label class="setting-card switch-card">
-                            <span>启动时显示欢迎页</span>
-                            <input id="welcomeSetting" type="checkbox" />
-                          </label>
                         </div>
                       </section>
 
@@ -716,12 +712,59 @@
                             <button class="secondary-btn" type="button" id="syncBtn">导出</button>
                           </div>
 
+                          <div class="setting-card action-setting">
+                            <div>
+                              <span>回收站</span>
+                              <p>查看已删除条目，可恢复或彻底删除。</p>
+                            </div>
+                            <button class="secondary-btn" type="button" id="openRecycleBinBtn">打开回收站</button>
+                          </div>
+
+                          <label class="setting-card">
+                            <span>回收站定时删除</span>
+                            <select id="recycleRetentionSetting">
+                              <option value="off">不自动删除</option>
+                              <option value="1d">1 天</option>
+                              <option value="3d">3 天</option>
+                              <option value="7d">7 天</option>
+                              <option value="15d">15 天</option>
+                              <option value="1m">1 月</option>
+                              <option value="6m">6 月</option>
+                              <option value="1y">1 年</option>
+                            </select>
+                          </label>
+
                           <div class="setting-card danger-setting">
                             <div>
                               <span>清空全部密码</span>
                               <p>删除当前保险箱中的全部密码记录，设置项会保留。</p>
                             </div>
                             <button class="danger-outline-btn" type="button" id="clearAllEntriesBtn">清空</button>
+                          </div>
+                        </div>
+                      </section>
+
+                      <section class="settings-page hidden" data-settings-page="recycle-bin">
+                        <div class="recycle-settings-page">
+                          <div class="recycle-settings-summary">
+                            <div class="recycle-settings-summary-main">
+                              <strong>已删除条目</strong>
+                              <p id="recycleBinSummary">回收站为空</p>
+                            </div>
+                            <div class="recycle-settings-summary-actions">
+                              <button class="secondary-btn recycle-back-btn" type="button" id="closeRecycleBinBtn">返回备份</button>
+                              <button class="danger-outline-btn" type="button" id="emptyRecycleBinBtn">清空回收站</button>
+                            </div>
+                          </div>
+                          <div class="recycle-empty hidden" id="recycleBinEmptyState">
+                            <strong>回收站是空的</strong>
+                            <span>删除的条目会先暂存在这里，你可以恢复或彻底删除。</span>
+                          </div>
+                          <div class="recycle-list" id="recycleBinList"></div>
+                          <div class="recycle-pagination hidden" id="recyclePagination">
+                            <button class="secondary-btn" type="button" id="recyclePrevPageBtn">上一页</button>
+                            <span class="recycle-pagination-text" id="recyclePaginationText">第 1 / 1 页</span>
+                            <button class="secondary-btn" type="button" id="recycleNextPageBtn">下一页</button>
                           </div>
                         </div>
                       </section>
@@ -881,6 +924,19 @@
         <div class="update-reminder-actions">
           <button class="secondary-btn" type="button" id="dismissUpdateTodayBtn">今日不再提醒</button>
           <button class="primary-btn" type="button" id="closeUpdateReminderBtn">我知道了</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop hidden" id="confirmModal" aria-hidden="true">
+      <section class="modal-sheet confirm-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle">
+        <div class="modal-head">
+          <h2 id="confirmModalTitle">请确认</h2>
+        </div>
+        <p class="modal-helper" id="confirmModalMessage">--</p>
+        <div class="modal-actions">
+          <button class="secondary-btn" type="button" id="confirmModalCancelBtn">取消</button>
+          <button class="primary-btn" type="button" id="confirmModalConfirmBtn">确认</button>
         </div>
       </section>
     </div>

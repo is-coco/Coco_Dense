@@ -55,6 +55,13 @@ const settingsSectionHint = document.getElementById("settingsSectionHint");
 const settingsSectionInfo = document.getElementById("settingsSectionInfo");
 const settingsSectionInfoText = document.getElementById("settingsSectionInfoText");
 const detailModeLabel = document.getElementById("detailModeLabel");
+const recycleBinList = document.getElementById("recycleBinList");
+const recycleBinSummary = document.getElementById("recycleBinSummary");
+const recycleBinEmptyState = document.getElementById("recycleBinEmptyState");
+const recyclePagination = document.getElementById("recyclePagination");
+const recyclePaginationText = document.getElementById("recyclePaginationText");
+const recyclePrevPageBtn = document.getElementById("recyclePrevPageBtn");
+const recycleNextPageBtn = document.getElementById("recycleNextPageBtn");
 const entryContextMenu = document.getElementById("entryContextMenu");
 const folderContextMenu = document.getElementById("folderContextMenu");
 const sidebarContextMenu = document.getElementById("sidebarContextMenu");
@@ -79,9 +86,12 @@ const clipboardClearSeconds = document.getElementById("clipboardClearSeconds");
 const cloudCheckMinutes = document.getElementById("cloudCheckMinutes");
 const passwordLengthSetting = document.getElementById("passwordLengthSetting");
 const copyConfirmSetting = document.getElementById("copyConfirmSetting");
-const welcomeSetting = document.getElementById("welcomeSetting");
 const backupExportSetting = document.getElementById("backupExportSetting");
+const recycleRetentionSetting = document.getElementById("recycleRetentionSetting");
+const openRecycleBinBtn = document.getElementById("openRecycleBinBtn");
+const closeRecycleBinBtn = document.getElementById("closeRecycleBinBtn");
 const clearAllEntriesBtn = document.getElementById("clearAllEntriesBtn");
+const emptyRecycleBinBtn = document.getElementById("emptyRecycleBinBtn");
 const changePasswordModal = document.getElementById("changePasswordModal");
 const changePasswordForm = document.getElementById("changePasswordForm");
 const currentMasterPassword = document.getElementById("currentMasterPassword");
@@ -152,6 +162,13 @@ const updateReminderCopy = document.getElementById("updateReminderCopy");
 const updateReminderNotes = document.getElementById("updateReminderNotes");
 const dismissUpdateTodayBtn = document.getElementById("dismissUpdateTodayBtn");
 const closeUpdateReminderBtn = document.getElementById("closeUpdateReminderBtn");
+const confirmModal = document.getElementById("confirmModal");
+const confirmModalMessage = document.getElementById("confirmModalMessage");
+const confirmModalCancelBtn = document.getElementById("confirmModalCancelBtn");
+const confirmModalConfirmBtn = document.getElementById("confirmModalConfirmBtn");
+const BIOMETRIC_UNLOCK_LABEL = "Touch ID识别";
+const BIOMETRIC_UNLOCK_PENDING_LABEL = "验证中";
+const BIOMETRIC_OPENING_LABEL = "打开中";
 const openRecoverySettingsBtn = document.getElementById("openRecoverySettingsBtn");
 const recoverySettingsModal = document.getElementById("recoverySettingsModal");
 const recoverySettingsForm = document.getElementById("recoverySettingsForm");
@@ -224,7 +241,14 @@ const SETTINGS_SECTIONS = {
     title: "备份",
     hint: "导出和清理。",
   },
+  "recycle-bin": {
+    title: "回收站",
+    hint: "恢复或彻底删除已删除条目。",
+  },
 };
+
+const RECYCLE_BIN_PAGE_SIZE = 5;
+const RECYCLE_RETENTION_OPTIONS = new Set(["off", "1d", "3d", "7d", "15d", "1m", "6m", "1y"]);
 
 const state = {
   entries: [],
@@ -235,6 +259,7 @@ const state = {
   settingsSection: "general",
   editTags: [],
   pendingActions: {},
+  recycleBinPage: 1,
   readPasswordVisible: false,
   vaultMeta: null,
   settings: {
@@ -243,8 +268,8 @@ const state = {
     cloudCheckMinutes: 5,
     passwordLength: 18,
     copyConfirm: true,
-    welcomeOnStart: true,
     backupBeforeExport: true,
+    recycleRetention: "off",
     folders: [],
   },
   folderUi: loadFolderUiState(),
@@ -276,6 +301,7 @@ const state = {
   contextFolderId: "",
   renamingEntryId: "",
   renamingFolderId: "",
+  pendingFolderBlurCommitId: "",
   recoveryStatus: {
     configured: false,
     corrupted: false,
@@ -319,6 +345,7 @@ const state = {
   updateReminder: loadUpdateReminderState(),
   updateReminderShownVersion: "",
   updateAutoChecked: false,
+  confirmResolver: null,
 };
 
 function normalizePriority(priority) {
@@ -578,10 +605,45 @@ function normalizeSettings(settings = {}) {
     cloudCheckMinutes: Number.isFinite(cloudCheckMinutesValue) ? Math.min(240, Math.max(1, cloudCheckMinutesValue)) : 5,
     passwordLength: Math.min(40, Math.max(8, Number.isFinite(passwordLengthValue) ? passwordLengthValue : 18)),
     copyConfirm: settings.copyConfirm !== false,
-    welcomeOnStart: settings.welcomeOnStart !== false,
     backupBeforeExport: settings.backupBeforeExport !== false,
+    recycleRetention: RECYCLE_RETENTION_OPTIONS.has(String(settings.recycleRetention || "off")) ? String(settings.recycleRetention || "off") : "off",
     folders,
   };
+}
+
+function getRecycleRetentionMs(value) {
+  switch (value) {
+    case "1d":
+      return 24 * 60 * 60 * 1000;
+    case "3d":
+      return 3 * 24 * 60 * 60 * 1000;
+    case "7d":
+      return 7 * 24 * 60 * 60 * 1000;
+    case "15d":
+      return 15 * 24 * 60 * 60 * 1000;
+    case "1m":
+      return 30 * 24 * 60 * 60 * 1000;
+    case "6m":
+      return 180 * 24 * 60 * 60 * 1000;
+    case "1y":
+      return 365 * 24 * 60 * 60 * 1000;
+    default:
+      return 0;
+  }
+}
+
+function purgeExpiredDeletedEntries() {
+  const retentionMs = getRecycleRetentionMs(state.settings?.recycleRetention);
+  if (!retentionMs || !Array.isArray(state.entries) || !state.entries.length) return 0;
+  const now = Date.now();
+  const beforeLength = state.entries.length;
+  state.entries = state.entries.filter((entry) => {
+    if (!entry?.deletedAt) return true;
+    const deletedAtMs = Date.parse(entry.deletedAt || "");
+    if (!Number.isFinite(deletedAtMs)) return true;
+    return now - deletedAtMs < retentionMs;
+  });
+  return beforeLength - state.entries.length;
 }
 
 function normalizeEntry(entry) {
@@ -601,6 +663,8 @@ function normalizeEntry(entry) {
     createdAt: entry?.createdAt || entry?.lastUsedAt || "",
     updatedAt: entry?.updatedAt || entry?.lastUsedAt || "",
     deletedAt: entry?.deletedAt || "",
+    deletedFromFolderId: String(entry?.deletedFromFolderId || ""),
+    deletedFromFolderName: String(entry?.deletedFromFolderName || ""),
     lastUsedAt: entry?.lastUsedAt || "",
     status: entry?.status || "已同步",
   };
@@ -681,12 +745,16 @@ function clearSensitiveInputs() {
   syncPasswordStrength();
 }
 
-function setActiveEntry(id) {
+async function setActiveEntry(id) {
+  if (id !== state.activeId && !(await confirmDiscardUnsavedEntryChanges("当前编辑内容尚未保存，切换记录会丢失修改，确定继续吗？"))) {
+    return false;
+  }
   state.activeId = id;
   state.readPasswordVisible = false;
   renderEntries();
   fillForm(getActiveEntry());
   setDetailMode("read");
+  return true;
 }
 
 function getActiveEntry() {
@@ -696,6 +764,77 @@ function getActiveEntry() {
 
 function getVisibleEntries() {
   return state.entries.filter((entry) => !entry.deletedAt);
+}
+
+function getDeletedEntries() {
+  return state.entries
+    .filter((entry) => entry.deletedAt)
+    .sort((a, b) => Date.parse(b.deletedAt || "") - Date.parse(a.deletedAt || ""));
+}
+
+function buildEntryDraftFromForm() {
+  return {
+    site: siteInput.value.trim(),
+    account: accountInput.value.trim(),
+    password: entryPasswordInput.value.trim(),
+    url: urlInput.value.trim(),
+    tags: state.editTags.join(" / "),
+    notes: notesInput.value.trim(),
+    pinned: pinnedToggle?.getAttribute("aria-pressed") === "true",
+    priority: normalizePriority(state.activePriority),
+  };
+}
+
+function buildComparableEntrySnapshot(entry) {
+  return {
+    site: String(entry?.site || "").trim(),
+    account: String(entry?.account || "").trim(),
+    password: String(entry?.password || "").trim(),
+    url: String(entry?.url || "").trim(),
+    tags: String(entry?.tags || "").trim(),
+    notes: String(entry?.notes || "").trim(),
+    pinned: Boolean(entry?.pinned),
+    priority: normalizePriority(entry?.priority),
+  };
+}
+
+function hasUnsavedEntryChanges() {
+  if (!state.unlocked || !state.editing) return false;
+  const draft = buildEntryDraftFromForm();
+  const activeEntry = getActiveEntry();
+  if (!activeEntry) {
+    return Boolean(
+      draft.site ||
+        draft.account ||
+        draft.password ||
+        draft.url ||
+        draft.tags ||
+        draft.notes ||
+        draft.pinned ||
+        draft.priority !== "green"
+    );
+  }
+  const saved = buildComparableEntrySnapshot(activeEntry);
+  return JSON.stringify(draft) !== JSON.stringify(saved);
+}
+
+async function confirmDiscardUnsavedEntryChanges(message = "当前有未保存修改，确定放弃吗？") {
+  if (!hasUnsavedEntryChanges()) return true;
+  return await confirmAction(message);
+}
+
+async function markEntryLastUsed(entry, options = {}) {
+  if (!entry || entry.deletedAt) return false;
+  const now = new Date().toISOString();
+  const shouldPersist = options.persist !== false;
+  entry.lastUsedAt = now;
+  entry.updatedAt = now;
+  renderEntries();
+  if (state.activeId === entry.id) {
+    fillForm(entry);
+  }
+  if (!shouldPersist) return true;
+  return persistVault();
 }
 
 function copyToClipboard(text, successMessage) {
@@ -1027,13 +1166,14 @@ function setSyncError(message = "同步失败") {
   refreshStatusText();
 }
 
-function showDataKeySyncPrompt(result, options = {}) {
+async function showDataKeySyncPrompt(result, options = {}) {
   if (!result?.needsDataKey) return false;
   const message = result.error || "同步需要数据钥匙，请到设置的数据钥匙页面输入后再试";
   setSyncError(message);
   showToast(message);
   if (options.openSettings) {
-    openSettingsView();
+    await openSettingsView();
+    if (!isSettingsOpen()) return true;
     setSettingsSection("data-key");
     requestAnimationFrame(() => dataKeyInput?.focus({ preventScroll: true }));
   }
@@ -1080,6 +1220,10 @@ function syncAuthBiometricAction() {
       state.biometricStatus.configured,
   );
   biometricUnlockBtn?.classList.toggle("hidden", !canUnlock);
+  if (biometricUnlockBtn) {
+    biometricUnlockBtn.disabled = false;
+    biometricUnlockBtn.textContent = BIOMETRIC_UNLOCK_LABEL;
+  }
 }
 
 function syncAuthDataKeyField() {
@@ -1199,6 +1343,9 @@ function syncSettingsNavigation() {
   settingsView?.querySelectorAll("[data-settings-page]").forEach((page) => {
     page.classList.toggle("hidden", page.dataset.settingsPage !== section);
   });
+  if (section === "recycle-bin") {
+    renderRecycleBinView();
+  }
 }
 
 function setSettingsSection(section) {
@@ -1217,8 +1364,8 @@ function syncSettingsForm() {
   if (cloudCheckMinutes) cloudCheckMinutes.value = String(state.settings.cloudCheckMinutes);
   if (passwordLengthSetting) passwordLengthSetting.value = String(state.settings.passwordLength);
   if (copyConfirmSetting) copyConfirmSetting.checked = Boolean(state.settings.copyConfirm);
-  if (welcomeSetting) welcomeSetting.checked = Boolean(state.settings.welcomeOnStart);
   if (backupExportSetting) backupExportSetting.checked = Boolean(state.settings.backupBeforeExport);
+  if (recycleRetentionSetting) recycleRetentionSetting.value = String(state.settings.recycleRetention || "off");
   syncSettingsNavigation();
   syncDataKeySettings();
   syncUpdateSettings();
@@ -1532,12 +1679,12 @@ async function downloadAppUpdate() {
     }
     state.updateInfo = result;
     state.downloadedFilePath = result.filePath || "";
-    const installNow = window.confirm(`下载完成，是否立即安装？
+    const installNow = await confirmAction(`下载完成，是否立即安装？
 
 点击确定立即安装，点击取消稍后手动安装。`);
     if (installNow) {
-      await window.vault?.installDownloaded?.(state.downloadedFilePath);
-      if (updateStatusText) updateStatusText.textContent = "正在打开安装包...";
+      const installResult = await installDownloadedUpdate(state.downloadedFilePath);
+      if (!installResult) return;
     } else {
       if (downloadUpdateBtn) {
         downloadUpdateBtn.disabled = false;
@@ -1567,6 +1714,17 @@ async function openReleasePage() {
   const targetUrl = state.updateInfo?.releaseUrl || "https://github.com/is-coco/Coco_Dense/releases";
   const result = await window.vault?.openExternal?.(targetUrl);
   showToast(result?.ok ? "已打开发布页" : result?.error || "无法打开发布页");
+}
+
+async function installDownloadedUpdate(filePath) {
+  const result = await window.vault?.installDownloaded?.(filePath);
+  if (!result?.ok) {
+    if (updateStatusText) updateStatusText.textContent = result?.error || "打开安装包失败";
+    showToast(result?.error || "打开安装包失败");
+    return false;
+  }
+  if (updateStatusText) updateStatusText.textContent = "正在打开安装包...";
+  return true;
 }
 
 async function autoCheckForAppUpdatesAfterUnlock() {
@@ -1620,7 +1778,7 @@ async function runCloudSyncCheck() {
     const syncConfig = state.syncConfig || {};
     const remote = await window.vault?.peekSync?.(syncConfig);
     if (!remote?.ok) {
-      if (showDataKeySyncPrompt(remote)) return false;
+      if (await showDataKeySyncPrompt(remote)) return false;
       setSyncError(remote?.error || "同步检查失败");
       return false;
     }
@@ -1663,7 +1821,7 @@ async function runCloudSyncCheck() {
     clearPendingCloudUpdate();
     const result = await window.vault?.downloadSync?.(syncConfig);
     if (!result?.ok) {
-      if (showDataKeySyncPrompt(result)) return false;
+      if (await showDataKeySyncPrompt(result)) return false;
       setSyncError(result?.error || "下载失败");
       return false;
     }
@@ -1691,7 +1849,7 @@ async function syncLocalMutationToCloud(payload = getVaultPayload()) {
     if (hasPendingRemote) {
       const result = await window.vault?.syncNow?.(payload, syncConfig);
       if (!result?.ok) {
-        if (showDataKeySyncPrompt(result)) return false;
+        if (await showDataKeySyncPrompt(result)) return false;
         setSyncError(result?.error || "自动同步失败");
         showToast(result?.error || "自动同步失败");
         return false;
@@ -1706,11 +1864,11 @@ async function syncLocalMutationToCloud(payload = getVaultPayload()) {
 
     const result = await window.vault?.uploadSync?.(payload, syncConfig);
     if (!result?.ok) {
-      if (showDataKeySyncPrompt(result)) return false;
+      if (await showDataKeySyncPrompt(result)) return false;
       if (result?.needsMerge) {
         const mergeResult = await window.vault?.syncNow?.(payload, syncConfig);
         if (!mergeResult?.ok) {
-          if (showDataKeySyncPrompt(mergeResult)) return false;
+          if (await showDataKeySyncPrompt(mergeResult)) return false;
           setSyncError(mergeResult?.error || "自动合并失败");
           showToast(mergeResult?.error || "自动合并失败");
           return false;
@@ -1768,7 +1926,7 @@ async function syncCloudAfterUnlock() {
       if (state.justCreatedVault && !payloadHasMeaningfulData(payload)) {
         const remote = await window.vault?.peekSync?.(state.syncConfig);
         if (!remote?.ok) {
-          if (showDataKeySyncPrompt(remote)) return false;
+          if (await showDataKeySyncPrompt(remote)) return false;
           setSyncError(remote?.error || "登录后同步失败");
           showToast(remote?.error || "登录后同步失败");
           return false;
@@ -1776,7 +1934,7 @@ async function syncCloudAfterUnlock() {
         if (remote.exists && payloadHasMeaningfulData(remote.payload)) {
           const downloadResult = await window.vault?.downloadSync?.(state.syncConfig);
           if (!downloadResult?.ok) {
-            if (showDataKeySyncPrompt(downloadResult)) return false;
+            if (await showDataKeySyncPrompt(downloadResult)) return false;
             setSyncError(downloadResult?.error || "登录后下载失败");
             showToast(downloadResult?.error || "登录后下载失败");
             return false;
@@ -1794,7 +1952,7 @@ async function syncCloudAfterUnlock() {
       }
       const result = await window.vault?.syncNow?.(payload, state.syncConfig);
       if (!result?.ok) {
-        if (showDataKeySyncPrompt(result)) return false;
+        if (await showDataKeySyncPrompt(result)) return false;
         setSyncError(result?.error || "登录后同步失败");
         showToast(result?.error || "登录后同步失败");
         return false;
@@ -1833,8 +1991,10 @@ function queueCloudSync(payload = getVaultPayload()) {
   if (state.cloudSyncJob) return state.cloudSyncJob;
   state.cloudSyncJob = flushQueuedCloudSync().finally(() => {
     state.cloudSyncJob = null;
-    state.cloudSyncQueuedPayload = null;
     refreshStatusText();
+    if (state.cloudSyncQueuedPayload) {
+      queueCloudSync(state.cloudSyncQueuedPayload);
+    }
   });
   refreshStatusText();
   return state.cloudSyncJob;
@@ -1915,7 +2075,7 @@ async function uploadWebdavNow() {
   uploadWebdavBtn.textContent = "上传到坚果云";
   if (!result?.ok) {
     setSyncBusy(false);
-    if (showDataKeySyncPrompt(result, { openSettings: true })) return;
+    if (await showDataKeySyncPrompt(result, { openSettings: true })) return;
     if (result?.needsMerge) {
       state.pendingCloudUpdate = true;
       state.pendingCloudUpdatedAt = Date.parse(result.remoteUpdatedAt || "") || Date.now();
@@ -1953,7 +2113,7 @@ async function downloadWebdavNow() {
   downloadWebdavBtn.textContent = "从坚果云下载";
   if (!result?.ok) {
     setSyncBusy(false);
-    if (showDataKeySyncPrompt(result, { openSettings: true })) return;
+    if (await showDataKeySyncPrompt(result, { openSettings: true })) return;
     setSyncError(result?.error || "下载失败");
     showToast(result?.error || "下载失败");
     return;
@@ -1984,7 +2144,7 @@ async function mergeWebdavNow() {
   mergeWebdavBtn.textContent = "双向合并";
   if (!result?.ok) {
     setSyncBusy(false);
-    if (showDataKeySyncPrompt(result, { openSettings: true })) return;
+    if (await showDataKeySyncPrompt(result, { openSettings: true })) return;
     setSyncError(result?.error || "合并失败");
     showToast(result?.error || "合并失败");
     return;
@@ -2005,7 +2165,29 @@ function syncDetailMode() {
 }
 
 function confirmAction(message) {
-  return window.confirm(message);
+  if (!confirmModal || !confirmModalMessage) {
+    return Promise.resolve(window.confirm(message));
+  }
+  if (state.confirmResolver) {
+    state.confirmResolver(false);
+    state.confirmResolver = null;
+  }
+  confirmModalMessage.textContent = String(message || "请确认当前操作");
+  confirmModal.classList.remove("hidden");
+  confirmModal.setAttribute("aria-hidden", "false");
+  return new Promise((resolve) => {
+    state.confirmResolver = resolve;
+    requestAnimationFrame(() => confirmModalConfirmBtn?.focus({ preventScroll: true }));
+  });
+}
+
+function closeConfirmModal(confirmed = false) {
+  if (!confirmModal) return;
+  confirmModal.classList.add("hidden");
+  confirmModal.setAttribute("aria-hidden", "true");
+  const resolver = state.confirmResolver;
+  state.confirmResolver = null;
+  resolver?.(Boolean(confirmed));
 }
 
 function showFormError(message) {
@@ -2433,14 +2615,18 @@ function syncEntryFolderMenu(entry) {
   });
 }
 
-function showEntryContextMenu(event, entry) {
+async function showEntryContextMenu(event, entry) {
   if (!entryContextMenu || !entry) return;
   event.preventDefault();
   event.stopPropagation();
   hideFolderContextMenu();
   hideSidebarContextMenu();
   state.contextEntryId = entry.id;
-  setActiveEntry(entry.id);
+  const switched = await setActiveEntry(entry.id);
+  if (!switched) {
+    state.contextEntryId = "";
+    return;
+  }
 
   const pinLabel = entryContextMenu.querySelector('[data-menu-action="toggle-pin"] .menu-label');
   if (pinLabel) pinLabel.textContent = entry.pinned ? "取消置顶" : "置顶";
@@ -2561,9 +2747,9 @@ async function createFolder(options = {}) {
     targetEntry.updatedAt = new Date().toISOString();
   }
   state.renamingFolderId = folder.id;
+  state.pendingFolderBlurCommitId = "";
   setFolderCollapsed(folder.id, false);
   renderEntries();
-  await persistVault();
   requestAnimationFrame(() => {
     const input = vaultList.querySelector(`[data-folder-rename-input="${CSS.escape(folder.id)}"]`);
     if (!input) return;
@@ -2573,6 +2759,7 @@ async function createFolder(options = {}) {
       input.setSelectionRange(length, length);
     }
   });
+  persistVault();
   return folder;
 }
 
@@ -2612,10 +2799,12 @@ async function commitFolderRename(input, options = {}) {
     return;
   }
   if (!nextName) {
+    showToast("文件夹名称不能为空");
     renderEntries();
     return;
   }
   if (findFolderByName(nextName, folderId)) {
+    showToast("已存在同名文件夹");
     renderEntries();
     return;
   }
@@ -2643,6 +2832,13 @@ async function commitFolderRename(input, options = {}) {
 async function deleteContextFolder(folderId) {
   const folder = getFolder(folderId);
   if (!folder) return;
+  const movedCount = state.entries.filter((entry) => entry.folderId === folderId && !entry.deletedAt).length;
+  const confirmed = await confirmAction(
+    movedCount
+      ? `删除后会把该文件夹下的 ${movedCount} 条记录移到未分组，确定继续吗？`
+      : "确定删除这个空文件夹吗？",
+  );
+  if (!confirmed) return;
   state.settings = normalizeSettings({
     ...state.settings,
     folders: getFolders().filter((item) => item.id !== folderId),
@@ -2792,7 +2988,7 @@ async function clearDataKeySettings() {
     showToast("请先解锁保险箱");
     return;
   }
-  if (!confirmAction("清空后会取消数据钥匙保护，并立即同步覆盖云端。确定继续吗？")) {
+  if (!(await confirmAction("清空后会取消数据钥匙保护，并立即同步覆盖云端。确定继续吗？"))) {
     return;
   }
   const result = await window.vault?.clearDataKey?.();
@@ -2938,8 +3134,7 @@ async function recoverAndUnlock(event) {
   state.unlocked = true;
   closeForgotPasswordModal();
   masterPassword.value = "";
-  window.vault?.showVault?.();
-  loadVaultPayload(result.vault);
+  await window.vault?.showVault?.();
   showToast("已通过安全问题解锁");
   syncCloudAfterUnlock();
   touchActivity();
@@ -2952,10 +3147,10 @@ async function unlockWithBiometric() {
   }
 
   biometricUnlockBtn.disabled = true;
-  biometricUnlockBtn.textContent = "验证中";
+  biometricUnlockBtn.textContent = BIOMETRIC_UNLOCK_PENDING_LABEL;
   const result = await window.vault?.unlockWithBiometric?.();
   biometricUnlockBtn.disabled = false;
-  biometricUnlockBtn.textContent = "指纹解锁";
+  biometricUnlockBtn.textContent = BIOMETRIC_UNLOCK_LABEL;
   if (!result?.ok) {
     showToast(result?.error || "指纹解锁失败");
     return;
@@ -2963,8 +3158,8 @@ async function unlockWithBiometric() {
 
   state.unlocked = true;
   state.justCreatedVault = Boolean(result.needsSetup);
-  window.vault?.showVault?.();
-  loadVaultPayload(result.vault);
+  biometricUnlockBtn.textContent = BIOMETRIC_OPENING_LABEL;
+  await window.vault?.showVault?.();
   showToast("已通过 Touch ID 解锁");
   syncCloudAfterUnlock();
   touchActivity();
@@ -3010,7 +3205,7 @@ async function importVaultFromFile() {
     masterPassword.focus();
     return;
   }
-  if (state.unlocked && !confirmAction("导入会覆盖当前保险箱。系统会先自动备份当前数据，确定继续吗？")) {
+  if (state.unlocked && !(await confirmAction("导入会覆盖当前保险箱。系统会先自动备份当前数据，确定继续吗？"))) {
     showToast("已取消导入");
     return;
   }
@@ -3020,8 +3215,8 @@ async function importVaultFromFile() {
   if (result?.ok) {
     state.unlocked = true;
     state.justCreatedVault = false;
-    window.vault?.showVault?.();
-    loadVaultPayload(result.vault);
+    await window.vault?.showVault?.();
+    await queueCloudSync(getVaultPayload({ touchUpdatedAt: false }));
     showToast(result.backupPath ? "已备份并导入保险箱" : "已导入保险箱");
     touchActivity();
     return;
@@ -3063,7 +3258,9 @@ async function persistVault() {
       return lastResult;
     } finally {
       state.persistJob = null;
-      state.persistQueuedPayload = null;
+      if (state.persistQueuedPayload) {
+        persistVault();
+      }
     }
   })();
   return state.persistJob;
@@ -3104,6 +3301,7 @@ async function changeMasterPassword(event) {
   if (result.vault) {
     loadVaultPayload(result.vault);
   }
+  await queueCloudSync(getVaultPayload({ touchUpdatedAt: false }));
   state.recoveryStatus = { configured: false, corrupted: false, questions: [], updatedAt: "" };
   syncRecoverySettings();
   closeChangePasswordModal();
@@ -3123,6 +3321,7 @@ function loadVaultPayload(payload, options = {}) {
   }
   state.entries = Array.isArray(payload?.entries) ? payload.entries.map(normalizeEntry) : [];
   state.settings = normalizeSettings(payload?.settings);
+  const purgedCount = purgeExpiredDeletedEntries();
   reconcileFolderUiState();
   state.vaultMeta = {
     createdAt: payload?.createdAt || new Date().toISOString(),
@@ -3148,6 +3347,12 @@ function loadVaultPayload(payload, options = {}) {
   refreshDataKeyStatus();
   refreshWebdavConfig();
   touchActivity();
+  if (purgedCount > 0 && state.unlocked) {
+    queueMicrotask(() => {
+      persistVault();
+      showToast(`已自动清理 ${purgedCount} 条过期回收站记录`);
+    });
+  }
 }
 
 async function initAuthState() {
@@ -3213,9 +3418,9 @@ function createEntryNode(entry) {
 
   row.append(dot, itemMain);
   button.append(row);
-  button.addEventListener("click", () => {
+  button.addEventListener("click", async () => {
     if (state.renamingEntryId) return;
-    setActiveEntry(entry.id);
+    await setActiveEntry(entry.id);
   });
   button.addEventListener("contextmenu", (event) => {
     showEntryContextMenu(event, entry);
@@ -3326,6 +3531,24 @@ function createFolderNode(folder, entries) {
       event.preventDefault();
       commitFolderRename(input, { cancel: true });
     }
+  });
+  input?.addEventListener("blur", () => {
+    if (state.renamingFolderId !== folderId) return;
+    if (state.pendingFolderBlurCommitId !== folderId) {
+      requestAnimationFrame(() => {
+        if (state.renamingFolderId !== folderId) return;
+        const nextInput = vaultList.querySelector(`[data-folder-rename-input="${CSS.escape(folderId)}"]`);
+        if (!(nextInput instanceof HTMLInputElement)) return;
+        nextInput.focus({ preventScroll: true });
+        const length = nextInput.value.length;
+        if (typeof nextInput.setSelectionRange === "function") {
+          nextInput.setSelectionRange(length, length);
+        }
+      });
+      return;
+    }
+    state.pendingFolderBlurCommitId = "";
+    commitFolderRename(input);
   });
   return wrapper;
 }
@@ -3516,6 +3739,7 @@ function renderReadView(entry) {
 
 function refreshStatusText() {
   const count = getVisibleEntries().length;
+  const deletedCount = getDeletedEntries().length;
   syncTopSyncStatus();
   if (!state.unlocked) {
     syncText.textContent = "等待解锁保险箱";
@@ -3525,9 +3749,117 @@ function refreshStatusText() {
     syncText.textContent = "云端有更新，保存或退出编辑后会处理";
     return;
   }
+  if (state.detailMode === "settings" && state.settingsSection === "recycle-bin") {
+    syncText.textContent = deletedCount ? `回收站中有 ${deletedCount} 条已删除记录` : "回收站为空";
+    return;
+  }
   syncText.textContent = count
     ? `已加载 ${count} 条密码记录，本地加密 vault 已解锁`
     : "当前没有密码记录，可直接新增";
+}
+
+function formatRecycleDate(value) {
+  const time = Date.parse(value || "");
+  if (!Number.isFinite(time)) return "刚刚删除";
+  return new Date(time).toLocaleString("zh-CN", { hour12: false });
+}
+
+function renderRecycleBinView() {
+  if (!recycleBinList || !recycleBinSummary || !recycleBinEmptyState) return;
+  const deletedEntries = getDeletedEntries();
+  const totalPages = Math.max(1, Math.ceil(deletedEntries.length / RECYCLE_BIN_PAGE_SIZE));
+  state.recycleBinPage = Math.min(Math.max(1, state.recycleBinPage), totalPages);
+  const startIndex = (state.recycleBinPage - 1) * RECYCLE_BIN_PAGE_SIZE;
+  const visibleEntries = deletedEntries.slice(startIndex, startIndex + RECYCLE_BIN_PAGE_SIZE);
+  recycleBinList.innerHTML = "";
+  recycleBinSummary.textContent = deletedEntries.length ? `共 ${deletedEntries.length} 条已删除记录` : "回收站为空";
+  recycleBinEmptyState.classList.toggle("hidden", deletedEntries.length > 0);
+  if (emptyRecycleBinBtn) emptyRecycleBinBtn.disabled = deletedEntries.length === 0;
+  if (recyclePagination) recyclePagination.classList.toggle("hidden", deletedEntries.length <= RECYCLE_BIN_PAGE_SIZE);
+  if (recyclePaginationText) recyclePaginationText.textContent = `第 ${state.recycleBinPage} / ${totalPages} 页`;
+  if (recyclePrevPageBtn) recyclePrevPageBtn.disabled = state.recycleBinPage <= 1;
+  if (recycleNextPageBtn) recycleNextPageBtn.disabled = state.recycleBinPage >= totalPages;
+
+  visibleEntries.forEach((entry) => {
+    const card = document.createElement("article");
+    card.className = "recycle-card";
+
+    const meta = document.createElement("div");
+    meta.className = "recycle-card-main";
+    const title = document.createElement("strong");
+    title.textContent = entry.site || "未命名记录";
+    const info = document.createElement("p");
+    const folderName = entry.deletedFromFolderName || getFolderName(entry.deletedFromFolderId) || "未分组";
+    info.textContent = `账号：${entry.account || "-"} · 原分组：${folderName} · 删除于 ${formatRecycleDate(entry.deletedAt)}`;
+    meta.append(title, info);
+
+    const actions = document.createElement("div");
+    actions.className = "recycle-card-actions";
+
+    const restoreBtn = document.createElement("button");
+    restoreBtn.type = "button";
+    restoreBtn.className = "secondary-btn";
+    restoreBtn.textContent = "恢复";
+    restoreBtn.addEventListener("click", () => {
+      restoreDeletedEntry(entry.id);
+    });
+
+    const purgeBtn = document.createElement("button");
+    purgeBtn.type = "button";
+    purgeBtn.className = "danger-outline-btn";
+    purgeBtn.textContent = "彻底删除";
+    purgeBtn.addEventListener("click", () => {
+      permanentlyDeleteEntry(entry.id);
+    });
+
+    actions.append(restoreBtn, purgeBtn);
+    card.append(meta, actions);
+    recycleBinList.appendChild(card);
+  });
+}
+
+async function restoreDeletedEntry(entryId) {
+  const target = state.entries.find((entry) => entry.id === entryId);
+  if (!target) return;
+  target.deletedAt = "";
+  target.folderId = isValidFolderId(target.deletedFromFolderId) ? target.deletedFromFolderId : "";
+  target.deletedFromFolderId = "";
+  target.deletedFromFolderName = "";
+  target.updatedAt = new Date().toISOString();
+  renderEntries();
+  renderRecycleBinView();
+  await persistVault();
+  showToast("已恢复到密码列表");
+}
+
+async function permanentlyDeleteEntry(entryId) {
+  const target = state.entries.find((entry) => entry.id === entryId);
+  if (!target) return;
+  if (!(await confirmAction(`确定彻底删除「${target.site || "当前记录"}」吗？此操作无法恢复。`))) {
+    return;
+  }
+  state.entries = state.entries.filter((entry) => entry.id !== entryId);
+  renderEntries();
+  renderRecycleBinView();
+  await persistVault();
+  showToast("已彻底删除");
+}
+
+async function emptyRecycleBin() {
+  const deletedEntries = getDeletedEntries();
+  if (!deletedEntries.length) {
+    showToast("回收站已经是空的");
+    return;
+  }
+  if (!(await confirmAction(`确定清空回收站吗？共 ${deletedEntries.length} 条记录将被彻底删除。`))) {
+    return;
+  }
+  const deletedIds = new Set(deletedEntries.map((entry) => entry.id));
+  state.entries = state.entries.filter((entry) => !deletedIds.has(entry.id));
+  renderEntries();
+  renderRecycleBinView();
+  await persistVault();
+  showToast("回收站已清空");
 }
 
 function syncReadPasswordToggle() {
@@ -3558,13 +3890,17 @@ function setEditing(nextEditing) {
   scheduleCloudSyncCheck();
 }
 
-function openSettingsView() {
+async function openSettingsView() {
+  if (!(await confirmDiscardUnsavedEntryChanges("当前编辑内容尚未保存，进入设置页会丢失修改，确定继续吗？"))) {
+    return false;
+  }
   setDetailMode("settings");
   setSettingsSection(state.settingsSection || "security");
   syncSettingsForm();
   refreshAppInfo();
   refreshDataKeyStatus();
   refreshWebdavConfig();
+  return true;
 }
 
 function closeSettingsView() {
@@ -3587,13 +3923,19 @@ async function saveSettings() {
     cloudCheckMinutes: cloudCheckMinutes?.value,
     passwordLength: passwordLengthSetting?.value,
     copyConfirm: copyConfirmSetting?.checked,
-    welcomeOnStart: welcomeSetting?.checked,
     backupBeforeExport: backupExportSetting?.checked,
+    recycleRetention: recycleRetentionSetting?.value,
     folders: state.settings?.folders,
   });
+  const purgedCount = purgeExpiredDeletedEntries();
   syncSettingsForm();
+  renderEntries();
+  if (state.detailMode === "settings" && state.settingsSection === "recycle-bin") {
+    renderRecycleBinView();
+  }
+  refreshStatusText();
   touchActivity();
-  await refreshVaultAfterMutation("设置已保存");
+  await refreshVaultAfterMutation(purgedCount ? `设置已保存，已清理 ${purgedCount} 条过期记录` : "设置已保存");
   scheduleCloudSyncCheck();
 }
 
@@ -3639,7 +3981,7 @@ async function upsertEntry() {
   }
 
   renderEntries();
-  setActiveEntry(nextEntry.id);
+  await setActiveEntry(nextEntry.id);
   setDetailMode("read");
   await refreshVaultAfterMutation("密码已保存");
 }
@@ -3671,8 +4013,7 @@ unlockForm.addEventListener("submit", async (event) => {
   }
 
   state.unlocked = true;
-  window.vault?.showVault?.();
-  loadVaultPayload(result.vault);
+  await window.vault?.showVault?.();
   showToast(result.needsSetup ? "已创建保险箱" : "已解锁保险箱");
   syncCloudAfterUnlock();
   touchActivity();
@@ -3755,11 +4096,16 @@ editEntryBtn.addEventListener("click", () => {
   touchActivity();
 });
 
-settingsBtn?.addEventListener("click", () => {
+settingsBtn?.addEventListener("click", async () => {
+  let changedView = false;
   if (isSettingsOpen()) {
     closeSettingsView();
+    changedView = true;
   } else {
-    openSettingsView();
+    changedView = await openSettingsView();
+  }
+  if (!changedView) {
+    return;
   }
   refreshRecoveryStatus();
   touchActivity();
@@ -3838,6 +4184,9 @@ openUrlBtn?.addEventListener("click", async () => {
     return;
   }
   const result = await window.vault?.openExternal?.(targetUrl);
+  if (result?.ok && entry) {
+    await markEntryLastUsed(entry);
+  }
   showToast(result?.ok ? "已打开网址" : result?.error || "无法打开网址");
   touchActivity();
 });
@@ -3883,6 +4232,9 @@ clearAllEntriesBtn?.addEventListener("click", () => {
     state.entries = state.entries.map((entry) => ({
       ...entry,
       deletedAt: entry.deletedAt || now,
+      deletedFromFolderId: entry.deletedFromFolderId || getEntryFolderId(entry),
+      deletedFromFolderName: entry.deletedFromFolderName || getFolderName(getEntryFolderId(entry)),
+      folderId: "",
       updatedAt: now,
     }));
     state.activeId = "";
@@ -3902,6 +4254,33 @@ clearAllEntriesBtn?.addEventListener("click", () => {
 
 biometricToggleBtn?.addEventListener("click", () => {
   toggleBiometricUnlock();
+});
+
+openRecycleBinBtn?.addEventListener("click", () => {
+  state.recycleBinPage = 1;
+  setSettingsSection("recycle-bin");
+  touchActivity();
+});
+
+closeRecycleBinBtn?.addEventListener("click", () => {
+  setSettingsSection("backup");
+  touchActivity();
+});
+
+emptyRecycleBinBtn?.addEventListener("click", () => {
+  emptyRecycleBin();
+});
+
+recyclePrevPageBtn?.addEventListener("click", () => {
+  state.recycleBinPage = Math.max(1, state.recycleBinPage - 1);
+  renderRecycleBinView();
+  touchActivity();
+});
+
+recycleNextPageBtn?.addEventListener("click", () => {
+  state.recycleBinPage += 1;
+  renderRecycleBinView();
+  touchActivity();
 });
 
 saveWebdavBtn?.addEventListener("click", () => {
@@ -3938,8 +4317,7 @@ checkUpdateBtn?.addEventListener("click", () => {
 
 downloadUpdateBtn?.addEventListener("click", async () => {
   if (downloadUpdateBtn?.dataset?.installMode === "true" && state.downloadedFilePath) {
-    await window.vault?.installDownloaded?.(state.downloadedFilePath);
-    if (updateStatusText) updateStatusText.textContent = "正在打开安装包...";
+    await installDownloadedUpdate(state.downloadedFilePath);
     return;
   }
   downloadAppUpdate();
@@ -3988,6 +4366,20 @@ updateReminderModal?.addEventListener("click", (event) => {
   }
 });
 
+confirmModalCancelBtn?.addEventListener("click", () => {
+  closeConfirmModal(false);
+});
+
+confirmModalConfirmBtn?.addEventListener("click", () => {
+  closeConfirmModal(true);
+});
+
+confirmModal?.addEventListener("click", (event) => {
+  if (event.target === confirmModal) {
+    closeConfirmModal(false);
+  }
+});
+
 deleteEntryBtn.addEventListener("click", () => {
   if (!state.activeId) return showToast("当前没有可删除的记录");
   const entry = getActiveEntry();
@@ -3995,7 +4387,16 @@ deleteEntryBtn.addEventListener("click", () => {
   confirmWithin("delete-" + state.activeId, deleteMessage, async () => {
     const now = new Date().toISOString();
     state.entries = state.entries.map((item) =>
-      item.id === state.activeId ? { ...item, deletedAt: now, updatedAt: now } : item,
+      item.id === state.activeId
+        ? {
+          ...item,
+          deletedAt: now,
+          deletedFromFolderId: getEntryFolderId(item),
+          deletedFromFolderName: getFolderName(getEntryFolderId(item)),
+          folderId: "",
+          updatedAt: now,
+        }
+        : item,
     );
     state.activeId = getVisibleEntries()[0]?.id ?? "";
     renderEntries();
@@ -4117,11 +4518,12 @@ document.querySelectorAll(".detail-tile").forEach((tile) => {
     const target = fieldMap[field];
     if (!target) return;
     if (state.settings.copyConfirm) {
-      confirmWithin("copy-" + entry.id + "-" + field, "再次点击复制" + target.label, () =>
-        copyToClipboard(target.value, "已复制"),
-      );
+      confirmWithin("copy-" + entry.id + "-" + field, "再次点击复制" + target.label, async () => {
+        await copyToClipboard(target.value, "已复制");
+        await markEntryLastUsed(entry);
+      });
     } else {
-      copyToClipboard(target.value, "已复制");
+      copyToClipboard(target.value, "已复制").then(() => markEntryLastUsed(entry));
     }
     touchActivity();
   });
@@ -4234,11 +4636,14 @@ priorityFilterMenu?.addEventListener("keydown", (event) => {
   }
 });
 
-topSyncStatus?.addEventListener("click", () => {
+topSyncStatus?.addEventListener("click", async () => {
+  if (!(await confirmDiscardUnsavedEntryChanges("当前编辑内容尚未保存，现在同步只会使用已保存数据，确定继续吗？"))) {
+    return;
+  }
   mergeWebdavNow();
 });
 
-[autoLockMinutes, clipboardClearSeconds, cloudCheckMinutes, passwordLengthSetting, copyConfirmSetting, welcomeSetting, backupExportSetting].forEach((node) => {
+[autoLockMinutes, clipboardClearSeconds, cloudCheckMinutes, passwordLengthSetting, copyConfirmSetting, backupExportSetting, recycleRetentionSetting].forEach((node) => {
   node?.addEventListener("change", async () => {
     state.settings = normalizeSettings({
       autoLockMinutes: autoLockMinutes?.value,
@@ -4246,12 +4651,18 @@ topSyncStatus?.addEventListener("click", () => {
       cloudCheckMinutes: cloudCheckMinutes?.value,
       passwordLength: passwordLengthSetting?.value,
       copyConfirm: copyConfirmSetting?.checked,
-      welcomeOnStart: welcomeSetting?.checked,
       backupBeforeExport: backupExportSetting?.checked,
+      recycleRetention: recycleRetentionSetting?.value,
       folders: state.settings?.folders,
     });
+    const purgedCount = purgeExpiredDeletedEntries();
     syncSettingsForm();
-    await refreshVaultAfterMutation("设置已保存");
+    renderEntries();
+    if (state.detailMode === "settings" && state.settingsSection === "recycle-bin") {
+      renderRecycleBinView();
+    }
+    refreshStatusText();
+    await refreshVaultAfterMutation(purgedCount ? `设置已保存，已清理 ${purgedCount} 条过期记录` : "设置已保存");
     scheduleCloudSyncCheck();
     touchActivity();
   });
@@ -4282,7 +4693,8 @@ entryContextMenu?.addEventListener("click", async (event) => {
   const action = button.dataset.menuAction;
   if (action === "edit") {
     hideEntryContextMenu();
-    setActiveEntry(entry.id);
+    const switched = await setActiveEntry(entry.id);
+    if (!switched) return;
     setEditing(true);
     return;
   }
@@ -4365,11 +4777,26 @@ sidebar?.addEventListener("contextmenu", (event) => {
 });
 
 window.addEventListener("mousemove", touchActivity, { passive: true });
+window.addEventListener("pointerdown", (event) => {
+  const activeFolderId = state.renamingFolderId;
+  if (!activeFolderId) return;
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  if (target.closest(`[data-folder-rename-input="${CSS.escape(activeFolderId)}"]`)) {
+    state.pendingFolderBlurCommitId = "";
+    return;
+  }
+  state.pendingFolderBlurCommitId = activeFolderId;
+}, true);
 window.addEventListener("pointerdown", touchActivity, { passive: true });
 window.addEventListener("scroll", touchActivity, { passive: true });
 window.addEventListener("keydown", (event) => {
   touchActivity();
   if (event.key === "Escape") {
+    if (state.confirmResolver) {
+      closeConfirmModal(false);
+      return;
+    }
     closeUpdateReminder();
     closeAllFilterMenus();
     hideEntryContextMenu();
@@ -4390,22 +4817,21 @@ window.addEventListener("click", (event) => {
 
 function showMainVault(payload) {
   state.unlocked = true;
-  // 先加载数据，再切换页面，避免闪烁
-  if (payload?.vault) {
-    loadVaultPayload(payload.vault, { preserveView: false });
-  }
   if (document.body.classList.contains("auth-mode")) {
     document.body.classList.remove("auth-mode");
     authScreen.classList.add("hidden");
     vaultScreen.classList.remove("hidden");
   }
-  if (state.settings.welcomeOnStart) {
+  requestAnimationFrame(() => {
+    if (payload?.vault) {
+      loadVaultPayload(payload.vault, { preserveView: false });
+    }
     clearForm();
-  }
-  syncPrimaryActionButton();
-  syncDetailSurface();
-  queueMicrotask(() => {
-    autoCheckForAppUpdatesAfterUnlock();
+    syncPrimaryActionButton();
+    syncDetailSurface();
+    queueMicrotask(() => {
+      autoCheckForAppUpdatesAfterUnlock();
+    });
   });
 }
 
@@ -4425,6 +4851,12 @@ window.vault?.onClearAuth?.(() => {
   clearCloudSyncTimer();
   closeChangePasswordModal();
   closeUpdateReminder();
+  state.unlocked = false;
+  document.body.classList.add("auth-mode");
+  authScreen.classList.remove("hidden");
+  vaultScreen.classList.add("hidden");
+  setDetailMode("welcome");
+  clearForm();
   clearSensitiveInputs();
   refreshRecoveryStatus();
   refreshDataKeyStatus();
@@ -4476,7 +4908,6 @@ window.vault?.onStatus?.((status) => {
   syncBiometricSettings();
   syncDataKeySettings();
   refreshStatusText();
-  refreshRecoveryStatus();
   syncDetailSurface();
 });
 

@@ -1817,14 +1817,15 @@ function wireWindowControls() {
         lockedUntil: unlockLockedUntil,
         dataKey: dataKeyStatus(),
       });
-      vaultWindow.showInactive();
-      vaultWindow.focus();
     }
 
     if (loginWindow && !loginWindow.isDestroyed()) {
       loginWindow.webContents.send("app:clearAuth");
       loginWindow.hide();
     }
+
+    revealWindow(vaultWindow);
+    return { ok: true };
   });
 
   ipcMain.handle("window:lockVault", (_event, options = {}) => {
@@ -2301,7 +2302,6 @@ ipcMain.handle("update:cancelDownload", () => {
       deleteRecoveryFile();
       vaultCache = nextPayload;
       activeMasterPassword = String(nextPassword ?? "");
-      loadRememberedDataKeyIntoSession();
       if (biometricStatus().configured) {
         saveBiometricSecret(nextPassword);
       }
@@ -2390,7 +2390,7 @@ ipcMain.handle("update:cancelDownload", () => {
       activeMasterPassword = recoveredPassword;
       if (nextDataKey) {
         activeDataKey = nextDataKey;
-      } else {
+      } else if (!activeDataKey) {
         loadRememberedDataKeyIntoSession();
       }
       if (biometricStatus().configured) {
