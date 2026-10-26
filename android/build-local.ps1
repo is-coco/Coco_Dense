@@ -16,4 +16,10 @@ try {
         else { & .\gradlew.bat @tasks --no-daemon --console plain }
         if ($LASTEXITCODE -ne 0) { throw "Gradle build failed: $LASTEXITCODE" }
     } finally { Pop-Location }
-} finally { & subst $drive /D }
+} finally {
+    & subst $drive /D
+    if ($DeviceTest -and (Get-Command adb -ErrorAction SilentlyContinue)) {
+        & adb uninstall com.coco.dense.qa.test | Out-Null
+        & adb uninstall com.coco.dense.qa | Out-Null
+    }
+}

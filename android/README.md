@@ -16,7 +16,7 @@ powershell -ExecutionPolicy Bypass -File .\android\build-local.ps1 -Release
 powershell -ExecutionPolicy Bypass -File .\android\build-local.ps1 -DeviceTest
 ```
 
-测试 APK 使用独立包名 `com.coco.dense.qa`，不会触碰正式版数据；设备测试只使用虚构密码与条目。签名 APK：`app/build/outputs/apk/release/app-release.apk`。这些文件为本地构建产物，不提交到 Git。
+测试 APK 使用独立包名 `com.coco.dense.qa`，不会触碰正式版数据；设备测试只使用虚构密码与条目。测试包和正式版若同时安装，会出现两个同名图标。`-DeviceTest` 完成后会自动卸载测试包；手动安装测试包后也应在测试结束时卸载 `com.coco.dense.qa`。签名 APK：`app/build/outputs/apk/release/app-release.apk`。这些文件为本地构建产物，不提交到 Git。
 
 ## 跨端验证
 
