@@ -3,3 +3,14 @@ dist/
 .env
 *.log
 .DS_Store
+android/.gradle/
+android/.gradle-home/
+android/.kotlin/
+android/.idea/
+android/local.properties
+android/app/build/
+android/build/
+android/dist/
+android/signing/
+android/*.jks
+android/*.keystore

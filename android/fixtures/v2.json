@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "format": "coco-dense-envelope-v2",
+  "key": {
+    "version": 1,
+    "kdf": "pbkdf2",
+    "rounds": 250000,
+    "salt": "S1MEGkbnP+O8Bn4B/enxkA==",
+    "iv": "RXjpsUC4zdmG34kY",
+    "tag": "6+S+YLVKoD7L36G/sEGHEA==",
+    "data": "TkafPIDXon01RrGpx6J1x6YxqNDr/oIBuAZ25CBhKYM="
+  },
+  "meta": {
+    "version": 1,
+    "alg": "aes-256-gcm",
+    "iv": "MMijDJUYb4HtAUfk",
+    "tag": "CKj5KJNlOqqAVpX8HehZSg==",
+    "data": "HCUzxatt6fvyvRMEe40+31rI1vBl9MCLTPGx3HgkJmKE+/SRWRELnsfwWpNYnFdrCYy4s9J/bwBA7lx+aJVJVX1E9qwsWSPGxX4mtmaZb6XROmpx6wNyJm2ZuQ=="
+  },
+  "settings": {
+    "version": 1,
+    "alg": "aes-256-gcm",
+    "iv": "oPuCNRLnq+kQ1n9L",
+    "tag": "uMbhyFTGauUkpR1YodbbgA==",
+    "data": "26jk1PcUSGLmw6lIwFUhsfWQMz1b4q0xTK9dZd/GE7dc3T+8RKm4EEVVzSSiYmZW81LRfo8F8VP1+L2Eh9wS2PpxT91Hz1s="
+  },
+  "entries": [
+    {
+      "id": "sample-entry",
+      "updatedAt": "2026-01-02T00:00:00.000Z",
+      "deletedAt": "",
+      "sealed": {
+        "version": 1,
+        "alg": "aes-256-gcm",
+        "iv": "fUljQbSi8RiwDICA",
+        "tag": "HeCGhF1QnlHvuehE5YJE8g==",
+        "data": "pxxS0oZ2s3wBF3l1cI/HxZrqcX7hzC33FL7t7uSCCZ3fty4RH2GaUfct48MTTqlHpVtjNN7u7B/kBklKxIOQiW0fcq28KEsAjfkZeh1Bl5kGpQNHJjd8m15henNPgZwOXLeW0+Rgtr/ArCcYlUVQTPLtTf+JWX5RgP80Wxvc9b3I8JU557obK17mMcBWA4gP6v3wUB5cN0Xy4Jksw9EVXk9957Xf+fryetmB4YQDxGIbGuCL4rXZWFuVvrYaw0b6ifteQ7Yu9HizzYzQOb3A//9ixHgXQtbEL2bd17rzBl+Mw7Ia6XVODO6vxtVgtW08d2e8vJQKTi3Ed3SMto3kH9VSSrhtTFcjI55u4aaWtgeVEnzDkxbX3upMETylwpWK/oISeyMbxk/4K40V0bPBsm+pDHUmrfKeKQfBs4xBMC+L4I1y2fNuxUzG6WOqSizlGyf+o6glAwQOpEaZHg=="
+      }
+    }
+  ]
+}

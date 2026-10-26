@@ -1,0 +1,53 @@
+{
+  "version": 3,
+  "format": "coco-dense-envelope-v3",
+  "auth": {
+    "version": 1,
+    "wrapped": {
+      "version": 1,
+      "kdf": "pbkdf2",
+      "rounds": 250000,
+      "salt": "zGVRaCVMbIgF31cQ1I28Sw==",
+      "iv": "4KjPHgTdI5NrgTUA",
+      "tag": "4E2bwdI4qrct34rv4pniyg==",
+      "data": "x/HmQkPytjI2SwdDRLoo7nSV3pAfSwv8Wn5Mm6OgX7s="
+    }
+  },
+  "key": {
+    "version": 1,
+    "kdf": "pbkdf2",
+    "rounds": 250000,
+    "salt": "k8NXvDffcNWdiyNMyjo9mg==",
+    "iv": "92Zb0o0QVoigvUlS",
+    "tag": "gS4JFk4rPTn65ZG4+Ug2ow==",
+    "data": "r+JQW6BIPKIANvlUdtw6wgbWj7dqzm+fSK8K/Uzj2so="
+  },
+  "meta": {
+    "version": 1,
+    "alg": "aes-256-gcm",
+    "iv": "fvoAAkF91LvxnnVE",
+    "tag": "/exbN3WbX9pzs2azso1T8g==",
+    "data": "DHmaA6pFxJVwyZ6OWO+xhE4GWl6vjpHBe2ATSnKxgq33jQwviTizJgGCy4ZZGq79vwKvIifXlaJInai/ccSlNNN4LDe00GjfgVkfFRrDDk4UFTZqnORxhTFNqg=="
+  },
+  "settings": {
+    "version": 1,
+    "alg": "aes-256-gcm",
+    "iv": "j4GkWHifhCx6/Buz",
+    "tag": "u9ZWpfhySVfDfR2N9jSUdA==",
+    "data": "2H5FRYcvmi8Lfgu7FcpROEUpyUZ5jYys52miK2DzW4ndMz+VeQREBs8qTz3eAnuZPT/IARS0D+mYtuxqV3hJLDmis4aMTsc="
+  },
+  "entries": [
+    {
+      "id": "sample-entry",
+      "updatedAt": "2026-01-02T00:00:00.000Z",
+      "deletedAt": "",
+      "sealed": {
+        "version": 1,
+        "alg": "aes-256-gcm",
+        "iv": "mvbRCIk+ho0ag0nK",
+        "tag": "SyYyMSf9qFgRk4MkUE+O2Q==",
+        "data": "zPoE7ixLqKHsZgPZ/WKZtwkcVd6m1daO5RF5QuufJ4ri56zr71wxyJrDw8mbd8cAZhRXQ4hlI/2CTyXqKW491FqZ4Q6gudwyNnca9mEqvwgX7kO6+gB4PEk/RV7JoYalHCT6TP8n1lsRnuasMJDCqeGXHEbtW1xNjm5NYUOtollla72fhrHVfYOXdbDF/k6hrtswOWxPibY4gC25Tl0T32vmrt3Vbakww+JCSl9wXMcYDxElpeXzwsFUXdRslaWpivHY18WwGo/L0BPc+y5b3D7Lu34CDXDz26Du8yB0m6HKkF1MiSOqXFOQ3OY2OzBkzfOSk7nmMAljCageuIqJsan7YfP0dzskSBeS+MU4mby6M4OKHKL6qkHGApgyJew73gmu2kMPQ/kJNcOeGGZMh9C/RaVkJS6G/ZcdLnpV8SF/ppiVRr+AUWBk+vuJOdAU3sKtwwaL7NyN+zj8CA=="
+      }
+    }
+  ]
+}

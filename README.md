@@ -4,6 +4,8 @@
 
 <h1 align="center">Coco Dense</h1>
 
+> 分支说明：`main` 维护 Windows/macOS 桌面端；`android` 维护原生安卓端。安卓开发和构建说明见 [android/README.md](android/README.md)。
+
 <p align="center">
   <strong>本地优先、支持云同步的加密密码与资料保险箱</strong>
 </p>
