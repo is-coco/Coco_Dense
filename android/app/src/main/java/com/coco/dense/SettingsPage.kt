@@ -35,6 +35,7 @@ import java.io.File
 @Composable
 fun SettingsPage(repo: VaultRepository, sync: WebDavSync, importFile: () -> Unit, exportFile: () -> Unit,
                  runTask: (suspend () -> Unit) -> Unit, notice: (String) -> Unit, refresh: () -> Unit,
+                 onSync: (SyncAction, SyncConfig) -> Unit,
                  deleted: List<JSONObject>, restore: (JSONObject) -> Unit) {
     val context = LocalContext.current
     val initial = remember { sync.config() }
@@ -83,7 +84,7 @@ fun SettingsPage(repo: VaultRepository, sync: WebDavSync, importFile: () -> Unit
             Spacer(Modifier.height(26.dp))
             Text("连接与数据", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, bottom = 10.dp))
-            SettingsGroup("同步", "连接 WebDAV 与管理远端文件", painterResource(R.drawable.tb_cloud_check), false) { section = "sync" }
+            SettingsGroup("同步", "上传、下载与云端保险箱", painterResource(R.drawable.tb_cloud_check), false) { section = "sync" }
             Spacer(Modifier.height(8.dp))
             SettingsGroup("数据钥匙", "额外加密凭据", painterResource(R.drawable.tb_key), false) { section = "key" }
             Spacer(Modifier.height(28.dp))
@@ -123,7 +124,20 @@ fun SettingsPage(repo: VaultRepository, sync: WebDavSync, importFile: () -> Unit
                                         Icon(painterResource(if (showDavPassword) R.drawable.tb_eye_off else R.drawable.tb_eye), "显示或隐藏") } })
                                 SettingsField(path, { path = it }, "远端路径")
                                 Button(onClick = { runTask { withContext(Dispatchers.IO) { sync.saveConfig(SyncConfig(server, user, davPassword, path)) }; notice("同步配置已保存") } }, modifier = Modifier.fillMaxWidth()) { Text("保存同步配置") }
-                                Text("同步前会先读取并合并云端数据；发生冲突时由你选择保留版本。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    OutlinedButton(onClick = { onSync(SyncAction.DOWNLOAD, SyncConfig(server, user, davPassword, path)) },
+                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                                        Icon(painterResource(R.drawable.tb_cloud_download), null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp)); Text("下载云端")
+                                    }
+                                    Button(onClick = { onSync(SyncAction.UPLOAD, SyncConfig(server, user, davPassword, path)) },
+                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                                        Icon(painterResource(R.drawable.tb_upload), null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp)); Text("上传本机")
+                                    }
+                                }
+                                Text("下载只更新本机；上传会先读取云端并检查冲突，不能安全合并时不会覆盖。首页按钮继续双向同步，编辑后也会自动同步。",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 HorizontalDivider()
                                 Text("导入已有云端保险箱", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                 Text("仅在本机保险箱没有记录和分组时使用。请先确认桌面端有可解锁的加密备份；此操作只读下载云端文件，验证成功后备份并替换本机空库。之后请用云端主密码解锁手机。",

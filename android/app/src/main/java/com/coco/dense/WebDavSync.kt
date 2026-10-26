@@ -17,10 +17,11 @@ sealed class SyncResult {
     data class Done(val entries: Int): SyncResult()
     data class NeedsChoice(val conflicts: List<SyncConflict>): SyncResult()
 }
+enum class SyncAction { DOWNLOAD, UPLOAD, QUICK }
 
-class WebDavSync(private val context: Context, private val repo: VaultRepository) {
+class WebDavSync(private val context: Context, private val repo: VaultRepository,
+                 private val client: OkHttpClient = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()) {
     private val secrets = DeviceSecrets(context)
-    private val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
     fun config(): SyncConfig = SyncConfig(secrets.get("dav-server") ?: DEFAULT_WEBDAV_SERVER, secrets.get("dav-user") ?: "",
         secrets.get("dav-password") ?: "", secrets.get("dav-path") ?: "/CocoDense/vault.json")
     fun saveConfig(config: SyncConfig) {
@@ -86,11 +87,35 @@ class WebDavSync(private val context: Context, private val repo: VaultRepository
         require(config.server.startsWith("https://") && config.user.isNotBlank() && config.password.isNotBlank()) { "请先保存 WebDAV 账号和应用密码" }
         val download = request(config, "GET")
         require(download.code == 200) { if (download.code == 404) "远端路径没有保险箱文件，请检查路径" else "下载失败：${download.code}" }
-        require(!download.etag.isNullOrBlank()) { "服务器没有提供 ETag，已停止导入以避免后续同步覆盖" }
         val unlocked = decryptRemote(download.bytes, master, dataKey)
         repo.import(download.bytes, master, dataKey)
         remember(unlocked.payload)
         return SyncMerger.entries(unlocked.payload).size
+    }
+
+    /** Merge the cloud vault into the local vault without writing to WebDAV. */
+    fun download(choices: Map<String, Boolean> = emptyMap()): SyncResult {
+        val config = config()
+        require(config.server.startsWith("https://") && config.user.isNotBlank() && config.password.isNotBlank()) { "请先配置 WebDAV" }
+        val local = requireNotNull(repo.payload) { "保险箱未解锁" }
+        val response = request(config, "GET")
+        require(response.code == 200) {
+            when (response.code) {
+                404 -> "远端路径没有保险箱文件，请检查远端路径"
+                401, 403 -> "WebDAV 账号或应用密码无效，无法下载"
+                else -> "下载失败：${response.code}"
+            }
+        }
+        val remote = decryptRemote(response.bytes, requireNotNull(repo.master), repo.dataKey).payload
+        val merged = if (repo.entries(true).isEmpty() && repo.folders().isEmpty()) remote else {
+            val (candidate, conflicts) = SyncMerger.merge(local, remote, baseline(), choices)
+            if (conflicts.isNotEmpty()) return SyncResult.NeedsChoice(conflicts)
+            candidate
+        }
+        repo.backup("before-download")
+        repo.applySynced(merged)
+        remember(remote)
+        return SyncResult.Done(SyncMerger.entries(merged).size)
     }
 
     /** choices maps entry ID to true for local or false for remote. Never writes unresolved conflicts. */
@@ -98,10 +123,12 @@ class WebDavSync(private val context: Context, private val repo: VaultRepository
         val config = config()
         require(config.server.startsWith("https://") && config.user.isNotBlank() && config.password.isNotBlank()) { "请先配置 WebDAV" }
         val local = requireNotNull(repo.payload) { "保险箱未解锁" }
-        ensureDirectory(config)
         repeat(3) {
             val download = request(config, "GET")
-            require(download.code == 200 || download.code == 404) { "下载失败：${download.code}" }
+            require(download.code == 200 || download.code == 404) {
+                if (download.code == 401 || download.code == 403) "WebDAV 账号或应用密码无效，无法读取云端"
+                else "下载失败：${download.code}"
+            }
             val exists = download.code == 200
             if (!exists && repo.entries(true).isEmpty() && repo.folders().isEmpty())
                 error("远端路径没有保险箱文件；已停止空库上传，请检查远端路径")
@@ -116,6 +143,7 @@ class WebDavSync(private val context: Context, private val repo: VaultRepository
             }
             val ciphertext = VaultCodec.encrypt(requireNotNull(repo.master), merged, repo.dataKey).toString().toByteArray()
             repo.backup("before-sync")
+            if (!exists) ensureDirectory(config)
             val upload = request(config, "PUT", body = ciphertext,
                 condition = if (exists) "If-Match" to requireNotNull(download.etag) else "If-None-Match" to "*")
             if (upload.code == 412) return@repeat

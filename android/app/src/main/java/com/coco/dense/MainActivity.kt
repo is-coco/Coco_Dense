@@ -99,6 +99,7 @@ private fun App(repo: VaultRepository) {
     var busy by remember { mutableStateOf(false) }
     var conflicts by remember { mutableStateOf<List<SyncConflict>>(emptyList()) }
     var choices by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
+    var conflictAction by remember { mutableStateOf(SyncAction.QUICK) }
     var pendingImport by remember { mutableStateOf<ByteArray?>(null) }
     var importPassword by remember { mutableStateOf("") }
     var importDataKey by remember { mutableStateOf("") }
@@ -113,6 +114,24 @@ private fun App(repo: VaultRepository) {
             finally { busy = false }
         }
     }
+    val runSync: (SyncAction, SyncConfig?, Map<String, Boolean>) -> Unit = { action, candidate, selected ->
+        runTask {
+            val result = withContext(Dispatchers.IO) {
+                if (candidate != null) sync.saveConfig(candidate)
+                if (action == SyncAction.DOWNLOAD) sync.download(selected) else sync.sync(selected)
+            }
+            if (result is SyncResult.NeedsChoice) {
+                conflictAction = action
+                conflicts = result.conflicts
+            } else if (result is SyncResult.Done) {
+                message = when (action) {
+                    SyncAction.DOWNLOAD -> "已下载并合并到本机，未上传云端（${result.entries} 条）"
+                    SyncAction.UPLOAD -> "已合并并上传云端（${result.entries} 条）"
+                    SyncAction.QUICK -> "双向同步完成（${result.entries} 条）"
+                }
+            }
+        }
+    }
     val afterMutation: () -> Unit = {
         refresh()
         pendingSync?.cancel()
@@ -122,7 +141,7 @@ private fun App(repo: VaultRepository) {
                 busy = true
                 try {
                     val result = operationMutex.withLock { withContext(Dispatchers.IO) { sync.sync() } }
-                    if (result is SyncResult.NeedsChoice) conflicts = result.conflicts
+                    if (result is SyncResult.NeedsChoice) { conflictAction = SyncAction.QUICK; conflicts = result.conflicts }
                     else refresh()
                 } catch (e: Exception) { message = "自动同步未完成：${e.message}" }
                 finally { busy = false }
@@ -179,8 +198,8 @@ private fun App(repo: VaultRepository) {
                     Text(if (tab == 0) "保险箱" else "设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 }
                 if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                IconButton(onClick = { runTask { val result = withContext(Dispatchers.IO) { sync.sync() }; if (result is SyncResult.NeedsChoice) conflicts = result.conflicts else message = "同步完成" } }, enabled = !busy) {
-                    Icon(painterResource(R.drawable.tb_refresh), "立即同步")
+                if (tab == 0) IconButton(onClick = { runSync(SyncAction.QUICK, null, emptyMap()) }, enabled = !busy) {
+                    Icon(painterResource(R.drawable.tb_refresh), "双向同步")
                 }
                 IconButton(onClick = { repo.lock(); unlocked = false }, enabled = !busy,
                     modifier = Modifier.size(42.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)) { Icon(painterResource(R.drawable.tb_lock), "锁定", modifier = Modifier.size(21.dp)) }
@@ -221,6 +240,7 @@ private fun App(repo: VaultRepository) {
                     { id -> runTask { withContext(Dispatchers.IO) { repo.removeFolder(id) }; afterMutation() } })
                 else -> SettingsPage(repo, sync, { importLauncher.launch(arrayOf("application/json", "*/*")) },
                     { exportLauncher.launch("Coco-Dense-vault.json") }, runTask, { message = it }, refresh,
+                    { action, config -> runSync(action, config, emptyMap()) },
                     deleted, { entry -> runTask { withContext(Dispatchers.IO) { repo.trash(entry.optString("id"), restore = true) }; afterMutation() } })
             }
         }
@@ -249,7 +269,7 @@ private fun App(repo: VaultRepository) {
             }
         } }, confirmButton = { TextButton(enabled = conflicts.all { choices.containsKey(it.id) }, onClick = {
             val selected = choices; conflicts = emptyList(); choices = emptyMap()
-            runTask { withContext(Dispatchers.IO) { sync.sync(selected) }; message = "同步完成" }
+            runSync(conflictAction, null, selected)
         }) { Text("合并") } }, dismissButton = { TextButton(onClick = { conflicts = emptyList(); choices = emptyMap() }) { Text("取消") } })
     if (pendingImport != null) AlertDialog(onDismissRequest = { pendingImport = null }, title = { Text("导入加密保险箱") },
         text = { Column {

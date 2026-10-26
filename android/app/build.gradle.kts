@@ -20,7 +20,7 @@ android {
         applicationId = "com.coco.dense"
         minSdk = 31
         targetSdk = 35
-        val appVersion = providers.gradleProperty("appVersion").orElse("0.1.9").get()
+        val appVersion = providers.gradleProperty("appVersion").orElse("0.1.10").get()
         val parts = appVersion.split('.').map { it.toIntOrNull() ?: 0 }
         versionCode = (parts.getOrElse(0) { 0 } * 1_000_000) + (parts.getOrElse(1) { 0 } * 1_000) + parts.getOrElse(2) { 0 }
         versionName = appVersion
@@ -64,5 +64,7 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    androidTestImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
