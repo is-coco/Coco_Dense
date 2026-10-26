@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.0-blue?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.2.1-blue?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey?style=flat-square" alt="platform" />
   <img src="https://img.shields.io/badge/runtime-Electron%2034-47848F?style=flat-square&logo=electron" alt="electron" />
   <img src="https://img.shields.io/badge/storage-local%20encrypted-success?style=flat-square" alt="storage" />
