@@ -30,7 +30,7 @@ const VAULT_FORMAT_V2 = "coco-dense-envelope-v2";
 const VAULT_FORMAT_V3 = "coco-dense-envelope-v3";
 const REMOTE_WRITE_VERIFY_ATTEMPTS = 6;
 const REMOTE_WRITE_VERIFY_DELAY_MS = 700;
-const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/is-coco/Coco_Dense/releases/latest";
+const GITHUB_RELEASES_URL = "https://api.github.com/repos/is-coco/Coco_Dense/releases?per_page=50";
 const GITHUB_DOWNLOAD_MIRRORS = [
   "https://ghfast.top/",
   "https://ghproxy.cn/",
@@ -1331,7 +1331,7 @@ function selectReleaseAsset(release) {
 }
 
 async function fetchLatestRelease() {
-  const response = await fetch(GITHUB_LATEST_RELEASE_URL, {
+  const response = await fetch(GITHUB_RELEASES_URL, {
     headers: {
       Accept: "application/vnd.github+json",
       "User-Agent": "Coco-Dense-Updater",
@@ -1340,7 +1340,13 @@ async function fetchLatestRelease() {
   if (!response.ok) {
     return { ok: false, error: `检查更新失败：${response.status}` };
   }
-  return { ok: true, release: await response.json() };
+  const releases = await response.json();
+  const release = Array.isArray(releases)
+    ? releases.find((item) => !item.draft && !item.prerelease &&
+        !String(item.tag_name || "").startsWith("android-v") && selectReleaseAsset(item))
+    : null;
+  if (!release) return { ok: false, error: "暂无此平台的安装包" };
+  return { ok: true, release };
 }
 
 function normalizeReleaseInfo(release) {
