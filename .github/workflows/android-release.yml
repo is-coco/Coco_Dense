@@ -46,3 +46,4 @@ jobs:
         with:
           files: android/app/build/outputs/apk/release/Coco.Dense-android-v*.apk
           make_latest: false
+          prerelease: true
