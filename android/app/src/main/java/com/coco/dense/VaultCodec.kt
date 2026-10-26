@@ -6,6 +6,7 @@ import java.security.SecureRandom
 import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
+import javax.crypto.BadPaddingException
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
@@ -61,6 +62,10 @@ object VaultCodec {
     fun unwrapWithPassword(secret: String, wrapped: JSONObject): ByteArray =
         open(derive(secret, unb64(wrapped.getString("salt")), wrapped.optInt("rounds", ROUNDS)), wrapped)
 
+    private fun unlockKey(secret: String, wrapped: JSONObject, name: String): ByteArray =
+        try { unwrapWithPassword(secret, wrapped) }
+        catch (_: BadPaddingException) { throw IllegalArgumentException("${name}不正确，或保险箱文件已损坏") }
+
     data class Unlocked(val payload: JSONObject, val vaultKey: ByteArray, val dataKeyVault: Boolean)
 
     fun decrypt(master: String, vault: JSONObject, dataKey: String = ""): Unlocked {
@@ -68,26 +73,32 @@ object VaultCodec {
         if (format == V2 || format == V3) {
             val isV3 = format == V3
             if (isV3) {
-                unwrapWithPassword(master, vault.getJSONObject("auth").getJSONObject("wrapped"))
+                unlockKey(master, vault.getJSONObject("auth").getJSONObject("wrapped"), "主密码")
                 require(dataKey.isNotBlank()) { "请输入数据钥匙" }
             }
-            val key = unwrapWithPassword(if (isV3) dataKey.trim() else master, vault.getJSONObject("key"))
-            val meta = JSONObject(String(open(key, vault.getJSONObject("meta")), Charsets.UTF_8))
-            val settings = if (vault.has("settings")) JSONObject(String(open(key, vault.getJSONObject("settings")), Charsets.UTF_8)) else JSONObject()
-            val entries = JSONArray()
-            val raw = vault.optJSONArray("entries") ?: JSONArray()
-            for (i in 0 until raw.length()) {
-                val item = raw.getJSONObject(i)
-                entries.put(JSONObject(String(open(key, item.optJSONObject("sealed") ?: item), Charsets.UTF_8)))
+            val key = unlockKey(if (isV3) dataKey.trim() else master, vault.getJSONObject("key"), if (isV3) "数据钥匙" else "主密码")
+            try {
+                val meta = JSONObject(String(open(key, vault.getJSONObject("meta")), Charsets.UTF_8))
+                val settings = if (vault.has("settings")) JSONObject(String(open(key, vault.getJSONObject("settings")), Charsets.UTF_8)) else JSONObject()
+                val entries = JSONArray()
+                val raw = vault.optJSONArray("entries") ?: JSONArray()
+                for (i in 0 until raw.length()) {
+                    val item = raw.getJSONObject(i)
+                    entries.put(JSONObject(String(open(key, item.optJSONObject("sealed") ?: item), Charsets.UTF_8)))
+                }
+                return Unlocked(JSONObject().put("version", meta.optInt("version", 1))
+                    .put("createdAt", meta.optString("createdAt", now()))
+                    .put("updatedAt", meta.optString("updatedAt", now()))
+                    .put("entries", entries).put("settings", settings), key, isV3)
+            } catch (_: BadPaddingException) {
+                throw IllegalArgumentException("保险箱内容校验失败，请尝试从加密备份恢复")
             }
-            return Unlocked(JSONObject().put("version", meta.optInt("version", 1))
-                .put("createdAt", meta.optString("createdAt", now()))
-                .put("updatedAt", meta.optString("updatedAt", now()))
-                .put("entries", entries).put("settings", settings), key, isV3)
         }
         // Desktop legacy V1 stores a single encrypted JSON payload.
         val key = derive(master, unb64(vault.getString("salt")), vault.optInt("rounds", ROUNDS))
-        return Unlocked(JSONObject(String(open(key, vault), Charsets.UTF_8)), bytes(32), false)
+        val content = try { open(key, vault) }
+            catch (_: BadPaddingException) { throw IllegalArgumentException("主密码不正确，或保险箱文件已损坏") }
+        return Unlocked(JSONObject(String(content, Charsets.UTF_8)), bytes(32), false)
     }
 
     fun encrypt(master: String, payload: JSONObject, dataKey: String = "", existingKey: ByteArray? = null): JSONObject {

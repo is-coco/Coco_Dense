@@ -2,6 +2,7 @@ package com.coco.dense
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
@@ -26,7 +27,22 @@ class VaultCodecTest {
     }
 
     @Test fun wrongPasswordFails() {
-        try { VaultCodec.decrypt("wrong", fixture("v2")); throw AssertionError("Accepted wrong password") }
-        catch (_: javax.crypto.AEADBadTagException) { }
+        val failure = runCatching { VaultCodec.decrypt("wrong", fixture("v2")) }.exceptionOrNull()
+        assertTrue(failure is IllegalArgumentException && failure.message?.contains("主密码不正确") == true)
+    }
+
+    @Test fun v3DistinguishesMasterPasswordAndDataKey() {
+        val vault = fixture("v3")
+        val wrongMaster = runCatching { VaultCodec.decrypt("wrong", vault, "sample-data-key") }.exceptionOrNull()
+        val wrongKey = runCatching { VaultCodec.decrypt("sample-master-password", vault, "wrong") }.exceptionOrNull()
+        assertTrue(wrongMaster?.message?.contains("主密码不正确") == true)
+        assertTrue(wrongKey?.message?.contains("数据钥匙不正确") == true)
+    }
+
+    @Test fun damagedContentHasReadableMessage() {
+        val vault = fixture("v2")
+        vault.getJSONObject("meta").put("tag", "AAAAAAAAAAAAAAAAAAAAAA==")
+        val failure = runCatching { VaultCodec.decrypt("sample-master-password", vault) }.exceptionOrNull()
+        assertTrue(failure?.message?.contains("保险箱内容校验失败") == true)
     }
 }
