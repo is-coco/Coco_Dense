@@ -35,4 +35,4 @@ powershell -ExecutionPolicy Bypass -File .\android\build-local.ps1 -DeviceTest
 
 ## 签名和更新
 
-本地签名材料位于被 Git 忽略的 `android/signing/`。**请单独备份 `release.jks` 和 `credentials.properties`：丢失密钥后，旧版 APK 不能用新签名覆盖升级。** 安卓发布使用独立标签 `android-v0.1.8` 这样的格式，只从 `android` 分支构建 APK；桌面端仍使用 `main` 分支的 `v*` 标签。GitHub Release 构建需设置四个仓库 Secrets：`ANDROID_KEYSTORE_BASE64`（`release.jks` 的 Base64）、`ANDROID_STORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。不要提交这些值。应用内更新只查找带 `android-v` 标签和 APK 资产的发布。
+本地签名材料位于被 Git 忽略的 `android/signing/`。**请单独备份 `release.jks` 和 `credentials.properties`：丢失密钥后，旧版 APK 不能用新签名覆盖升级。** 安卓发布使用独立标签 `android-v0.1.9` 这样的格式，只从 `android` 分支构建 APK；桌面端仍使用 `main` 分支的 `v*` 标签。GitHub Release 构建需设置四个仓库 Secrets：`ANDROID_KEYSTORE_BASE64`（`release.jks` 的 Base64）、`ANDROID_STORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。不要提交这些值。应用内更新只查找带 `android-v` 标签和 APK 资产的发布。
