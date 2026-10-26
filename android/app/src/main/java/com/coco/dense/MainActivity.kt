@@ -32,6 +32,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
@@ -190,9 +192,9 @@ private fun App(repo: VaultRepository) {
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).statusBarsPadding()
-                .padding(start = 20.dp, end = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Image(painterResource(R.drawable.coco_brand), null, modifier = Modifier.size(32.dp))
-                Spacer(Modifier.width(9.dp))
+                .padding(start = 20.dp, end = 16.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Image(painterResource(R.drawable.coco_brand), null, modifier = Modifier.size(28.dp))
+                Spacer(Modifier.width(8.dp))
                 Column(Modifier.weight(1f)) {
                     Text("COCO DENSE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
                     Text(if (tab == 0) "保险箱" else "设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -455,13 +457,24 @@ private fun VaultList(entries: List<JSONObject>, folders: List<JSONObject>, open
     }.sortedWith(compareByDescending<JSONObject> { it.optBoolean("pinned") }.thenByDescending { it.optBoolean("favorite") }.thenBy { it.optString("site") })
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-            TextField(query, { query = it }, modifier = Modifier.fillMaxWidth(),
-                leadingIcon = { Icon(painterResource(R.drawable.tb_search), null) }, placeholder = { Text("搜索密码或账号") },
-                trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(painterResource(R.drawable.tb_x), "清除搜索") } },
-                singleLine = true, shape = RoundedCornerShape(19.dp),
-                colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant, unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant))
-            Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().height(50.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(17.dp))
+                .padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(painterResource(R.drawable.tb_search), null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(12.dp))
+                BasicTextField(query, { query = it }, singleLine = true,
+                    modifier = Modifier.weight(1f).semantics { contentDescription = "搜索密码或账号" },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    decorationBox = { inner -> Box {
+                        if (query.isEmpty()) Text("搜索密码或账号", style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        inner()
+                    } })
+                if (query.isNotEmpty()) IconButton(onClick = { query = "" }, modifier = Modifier.size(44.dp)) {
+                    Icon(painterResource(R.drawable.tb_x), "清除搜索")
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("${shown.size} 条记录", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Spacer(Modifier.width(4.dp))
                 Box {
