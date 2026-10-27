@@ -5,10 +5,13 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -33,6 +36,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -56,6 +60,8 @@ import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.File
 import java.security.SecureRandom
+import java.text.Collator
+import java.util.Locale
 
 class MainActivity : androidx.fragment.app.FragmentActivity() {
     private lateinit var repo: VaultRepository
@@ -95,6 +101,7 @@ private fun App(repo: VaultRepository) {
     val sync = remember { WebDavSync(context, repo) }
     val scope = rememberCoroutineScope()
     var unlocked by remember { mutableStateOf(false) }
+    var welcome by remember { mutableStateOf(true) }
     var revision by remember { mutableIntStateOf(0) }
     var tab by remember { mutableIntStateOf(0) }
     var editing by remember { mutableStateOf<JSONObject?>(null) }
@@ -131,11 +138,12 @@ private fun App(repo: VaultRepository) {
                     conflictAction = action
                     conflicts = result.conflicts
                 } else if (result is SyncResult.Done) {
-                    message = when (action) {
+                    val notice = when (action) {
                         SyncAction.DOWNLOAD -> "已下载并合并到本机，未上传云端（${result.entries} 条）"
                         SyncAction.UPLOAD -> "已合并并上传云端（${result.entries} 条）"
                         SyncAction.QUICK -> "双向同步完成（${result.entries} 条）"
                     }
+                    Toast.makeText(context, notice, Toast.LENGTH_SHORT).show()
                 }
             } finally { syncRunning = false }
         }
@@ -176,18 +184,22 @@ private fun App(repo: VaultRepository) {
             runTask {
                 withContext(Dispatchers.IO) { if (repo.exists) repo.unlock(password, key) else repo.create(password) }
                 unlocked = true
+                welcome = true
             }
         }, { answer, key -> runTask {
             withContext(Dispatchers.IO) { repo.unlock(RecoveryStore(context).recover(answer), key) }
             unlocked = true
+            welcome = true
         } }, {
             BiometricStore(context as androidx.fragment.app.FragmentActivity).unlock({ password, key -> runTask {
                 withContext(Dispatchers.IO) { repo.unlock(password, key) }; unlocked = true
+                welcome = true
             } }, { message = it })
         }, { pattern -> runTask {
             val (password, key) = withContext(Dispatchers.IO) { PatternStore(context).unlock(pattern) }
             withContext(Dispatchers.IO) { repo.unlock(password, key) }
             unlocked = true
+            welcome = true
         } })
         if (message.isNotEmpty()) ErrorDialog(message) { message = "" }
         return
@@ -238,7 +250,7 @@ private fun App(repo: VaultRepository) {
             when (tab) {
                 0 -> PullToRefreshBox(isRefreshing = syncRunning, onRefresh = {
                     if (!busy) runSync(SyncAction.QUICK, null, emptyMap())
-                }, modifier = Modifier.fillMaxSize()) { VaultList(entries, repo.folders(), { viewing = it }, { value ->
+                }, modifier = Modifier.fillMaxSize()) { VaultList(entries, repo.folders(), welcome, { welcome = it }, { viewing = it }, { value ->
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("Coco Dense", value))
                     scope.launch { snackbar.showSnackbar("密码已复制，30 秒后清除剪贴板") }
@@ -268,7 +280,7 @@ private fun App(repo: VaultRepository) {
             }, 30_000)
             scope.launch { snackbar.showSnackbar("已复制，30 秒后清除剪贴板") }
         })
-    if (conflicts.isNotEmpty()) AlertDialog(onDismissRequest = {}, title = { Text("同步冲突") },
+    if (conflicts.isNotEmpty()) DenseDialog(onDismissRequest = {}, title = { Text("同步冲突") },
         text = { Column { Text("两台设备修改了相同条目，请逐条选择保留版本。")
             conflicts.forEach { conflict ->
                 Text(conflict.local?.optString("site")?.ifEmpty { conflict.local?.optString("name") ?: "" }
@@ -277,16 +289,16 @@ private fun App(repo: VaultRepository) {
                 Row { FilterChip(selected = choices[conflict.id] == true, onClick = { choices = choices + (conflict.id to true) }, label = { Text("本机") })
                     Spacer(Modifier.width(8.dp)); FilterChip(selected = choices[conflict.id] == false, onClick = { choices = choices + (conflict.id to false) }, label = { Text("云端") }) }
             }
-        } }, confirmButton = { TextButton(enabled = conflicts.all { choices.containsKey(it.id) }, onClick = {
+        } }, confirmButton = { Button(enabled = conflicts.all { choices.containsKey(it.id) }, onClick = {
             val selected = choices; conflicts = emptyList(); choices = emptyMap()
             runSync(conflictAction, null, selected)
         }) { Text("合并") } }, dismissButton = { TextButton(onClick = { conflicts = emptyList(); choices = emptyMap() }) { Text("取消") } })
-    if (pendingImport != null) AlertDialog(onDismissRequest = { pendingImport = null }, title = { Text("导入加密保险箱") },
+    if (pendingImport != null) DenseDialog(onDismissRequest = { pendingImport = null }, title = { Text("导入加密保险箱") },
         text = { Column {
             Text("导入前会备份当前保险箱。请输入备份文件原本使用的凭据。")
             OutlinedTextField(importPassword, { importPassword = it }, label = { Text("备份主密码") }, visualTransformation = PasswordVisualTransformation())
             OutlinedTextField(importDataKey, { importDataKey = it }, label = { Text("备份数据钥匙（如有）") }, visualTransformation = PasswordVisualTransformation())
-        } }, confirmButton = { TextButton(enabled = importPassword.isNotBlank(), onClick = {
+        } }, confirmButton = { Button(enabled = importPassword.isNotBlank(), onClick = {
             val bytes = pendingImport!!; pendingImport = null
             runTask { withContext(Dispatchers.IO) { repo.import(bytes, importPassword, importDataKey); sync.resetBaseline() }; BiometricStore(context as androidx.fragment.app.FragmentActivity).clear(); PatternStore(context).clear(); message = "已导入保险箱，请重新设置快捷解锁" }
         }) { Text("导入") } }, dismissButton = { TextButton(onClick = { pendingImport = null }) { Text("取消") } })
@@ -310,7 +322,30 @@ private fun BottomAction(label: String, icon: androidx.compose.ui.graphics.paint
 }
 
 @Composable
-private fun ErrorDialog(text: String, close: () -> Unit) = AlertDialog(onDismissRequest = close, title = { Text("提示") }, text = { Text(text) }, confirmButton = { TextButton(onClick = close) { Text("知道了") } })
+private fun ErrorDialog(text: String, close: () -> Unit) = DenseDialog(onDismissRequest = close, title = { Text("提示") }, text = { Text(text) }, confirmButton = { Button(onClick = close) { Text("知道了") } })
+
+@Composable
+private fun DenseDialog(onDismissRequest: () -> Unit, title: @Composable () -> Unit,
+                        text: @Composable () -> Unit, confirmButton: @Composable () -> Unit,
+                        dismissButton: @Composable () -> Unit = {}) {
+    Dialog(onDismissRequest = onDismissRequest) {
+        Surface(shape = RoundedCornerShape(26.dp), color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 16.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(22.dp)) {
+                ProvideTextStyle(MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)) { title() }
+                Spacer(Modifier.height(14.dp))
+                Box(Modifier.heightIn(max = 390.dp).verticalScroll(rememberScrollState())) {
+                    ProvideTextStyle(MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)) { text() }
+                }
+                Spacer(Modifier.height(22.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    dismissButton(); Spacer(Modifier.width(8.dp)); confirmButton()
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun AuthScreen(hasVault: Boolean, busy: Boolean, recoveryQuestion: String?, biometricEnabled: Boolean,
@@ -406,9 +441,9 @@ private fun AuthScreen(hasVault: Boolean, busy: Boolean, recoveryQuestion: Strin
         Text("本机加密保存 · 你的密码只属于你", color = Color(0xFF7F8B9D),
             style = MaterialTheme.typography.labelMedium, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp))
     }
-    if (recovery) AlertDialog(onDismissRequest = { recovery = false }, title = { Text("安全问题找回") },
+    if (recovery) DenseDialog(onDismissRequest = { recovery = false }, title = { Text("安全问题找回") },
         text = { Column { Text(recoveryQuestion ?: ""); OutlinedTextField(answer, { answer = it }, label = { Text("答案") }) } },
-        confirmButton = { TextButton(onClick = { recovery = false; recover(answer, dataKey) }, enabled = answer.isNotBlank()) { Text("解锁") } },
+        confirmButton = { Button(onClick = { recovery = false; recover(answer, dataKey) }, enabled = answer.isNotBlank()) { Text("解锁") } },
         dismissButton = { TextButton(onClick = { recovery = false }) { Text("取消") } })
     if (patternOpen) Dialog(onDismissRequest = { patternOpen = false }) {
         Surface(shape = RoundedCornerShape(28.dp), color = Color.White) {
@@ -444,16 +479,19 @@ private fun SecretInput(value: String, onValueChange: (String) -> Unit, placehol
 }
 
 @Composable
-private fun VaultList(entries: List<JSONObject>, folders: List<JSONObject>, open: (JSONObject) -> Unit,
+private fun VaultList(entries: List<JSONObject>, folders: List<JSONObject>, welcome: Boolean, setWelcome: (Boolean) -> Unit,
+                      open: (JSONObject) -> Unit,
                       copyPassword: (String) -> Unit, saveFolder: (JSONObject) -> Unit, deleteFolder: (String) -> Unit) {
     var query by remember { mutableStateOf("") }
     var selectedFolder by remember { mutableStateOf("") }
     var newFolder by remember { mutableStateOf(false) }
     var folderName by remember { mutableStateOf("") }
+    var folderPriority by remember { mutableStateOf("green") }
     var editingFolder by remember { mutableStateOf<JSONObject?>(null) }
     var priorityFilter by remember { mutableStateOf("") }
     var favoritesOnly by remember { mutableStateOf(false) }
     var filtersOpen by remember { mutableStateOf(false) }
+    val sortedFolders = orderedFolders(folders)
     val shown = entries.filter {
         (selectedFolder.isEmpty() || it.optString("folderId") == selectedFolder) &&
             (priorityFilter.isEmpty() || it.optString("priority", "green") == priorityFilter) &&
@@ -466,7 +504,7 @@ private fun VaultList(entries: List<JSONObject>, folders: List<JSONObject>, open
                 .padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(painterResource(R.drawable.tb_search), null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(12.dp))
-                BasicTextField(query, { query = it }, singleLine = true,
+                BasicTextField(query, { query = it; setWelcome(false) }, singleLine = true,
                     modifier = Modifier.weight(1f).semantics { contentDescription = "搜索密码或账号" },
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -479,13 +517,33 @@ private fun VaultList(entries: List<JSONObject>, folders: List<JSONObject>, open
                     Icon(painterResource(R.drawable.tb_x), "清除搜索")
                 }
             }
+        }
+            if (welcome) {
+                Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), contentAlignment = Alignment.Center) {
+                    Column(Modifier.padding(horizontal = 26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(Modifier.size(82.dp).background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(27.dp)),
+                            contentAlignment = Alignment.Center) {
+                            Icon(painterResource(R.drawable.tb_shield_lock), null, Modifier.size(38.dp),
+                                tint = MaterialTheme.colorScheme.primary)
+                        }
+                        Spacer(Modifier.height(24.dp))
+                        Text("欢迎回来", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(7.dp))
+                        Text("密码已准备好，需要时随时查找。", style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(24.dp))
+                        Button(onClick = { setWelcome(false) }, shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.height(48.dp)) { Text("查看全部记录") }
+                    }
+                }
+            } else {
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("${shown.size} 条记录", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 Spacer(Modifier.width(4.dp))
                 Box {
                     IconButton(onClick = { filtersOpen = true }, modifier = Modifier.size(44.dp)) { Icon(painterResource(R.drawable.tb_adjustments_horizontal), "筛选和分组") }
                     DropdownMenu(expanded = filtersOpen, onDismissRequest = { filtersOpen = false }) {
-                        DropdownMenuItem(text = { Text("新建分组") }, leadingIcon = { Icon(painterResource(R.drawable.tb_folder_plus), null) }, onClick = { newFolder = true; filtersOpen = false })
+                        DropdownMenuItem(text = { Text("新建分组") }, leadingIcon = { Icon(painterResource(R.drawable.tb_folder_plus), null) }, onClick = { folderName = ""; folderPriority = "green"; newFolder = true; filtersOpen = false })
                         HorizontalDivider()
                         DropdownMenuItem(text = { Text(if (favoritesOnly) "✓ 仅看收藏" else "仅看收藏") }, onClick = { favoritesOnly = !favoritesOnly; filtersOpen = false })
                         listOf("red" to "紧急", "yellow" to "重要").forEach { (value, label) ->
@@ -496,17 +554,17 @@ private fun VaultList(entries: List<JSONObject>, folders: List<JSONObject>, open
                     }
                 }
             }
-        }
         LazyRow(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item { VaultPill("全部", selectedFolder.isEmpty() && !favoritesOnly) { selectedFolder = ""; favoritesOnly = false } }
             item { VaultPill("收藏", favoritesOnly) { favoritesOnly = !favoritesOnly } }
-            items(folders, key = { it.optString("id") }) { folder -> VaultPill(folder.optString("name"), selectedFolder == folder.optString("id")) {
-                selectedFolder = folder.optString("id")
-            } }
-            if (selectedFolder.isNotEmpty()) item { VaultPill("管理分组", false) {
-                editingFolder = folders.firstOrNull { it.optString("id") == selectedFolder }
-                folderName = editingFolder?.optString("name") ?: ""
-            } }
+            items(sortedFolders, key = { it.optString("id") }) { folder ->
+                VaultPill(folder.optString("name"), selectedFolder == folder.optString("id"),
+                    onLongClick = {
+                        editingFolder = folder
+                        folderName = folder.optString("name")
+                        folderPriority = folder.optString("priority", "green")
+                    }) { selectedFolder = folder.optString("id") }
+            }
         }
         if (shown.isEmpty()) Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 24.dp)) {
@@ -539,25 +597,51 @@ private fun VaultList(entries: List<JSONObject>, folders: List<JSONObject>, open
                 }
             }
         }
+        }
     }
-    if (newFolder) AlertDialog(onDismissRequest = { newFolder = false }, title = { Text("新建分组") },
-        text = { OutlinedTextField(folderName, { folderName = it }, label = { Text("名称") }) },
-        confirmButton = { TextButton(onClick = { saveFolder(JSONObject().put("name", folderName.trim()).put("priority", "green")); folderName = ""; newFolder = false }, enabled = folderName.isNotBlank()) { Text("保存") } },
+    if (newFolder) DenseDialog(onDismissRequest = { newFolder = false }, title = { Text("新建分组") },
+        text = { Column { OutlinedTextField(folderName, { folderName = it }, label = { Text("名称") });
+            FolderPriorityPicker(folderPriority) { folderPriority = it } } },
+        confirmButton = { Button(onClick = { saveFolder(JSONObject().put("name", folderName.trim()).put("priority", folderPriority)); folderName = ""; newFolder = false }, enabled = folderName.isNotBlank()) { Text("保存") } },
         dismissButton = { TextButton(onClick = { newFolder = false }) { Text("取消") } })
-    if (editingFolder != null) AlertDialog(onDismissRequest = { editingFolder = null }, title = { Text("管理分组") },
-        text = { OutlinedTextField(folderName, { folderName = it }, label = { Text("名称") }) },
-        confirmButton = { TextButton(enabled = folderName.isNotBlank(), onClick = {
-            saveFolder(JSONObject(editingFolder.toString()).put("name", folderName.trim())); editingFolder = null
+    if (editingFolder != null) DenseDialog(onDismissRequest = { editingFolder = null }, title = { Text("编辑分组") },
+        text = { Column { OutlinedTextField(folderName, { folderName = it }, label = { Text("名称") });
+            FolderPriorityPicker(folderPriority) { folderPriority = it } } },
+        confirmButton = { Button(enabled = folderName.isNotBlank(), onClick = {
+            saveFolder(JSONObject(editingFolder.toString()).put("name", folderName.trim()).put("priority", folderPriority)); editingFolder = null
         }) { Text("保存") } },
         dismissButton = { TextButton(onClick = { deleteFolder(editingFolder!!.optString("id")); selectedFolder = ""; editingFolder = null }) { Text("删除分组") } })
 }
 
+private fun orderedFolders(folders: List<JSONObject>): List<JSONObject> {
+    val names = Collator.getInstance(Locale.SIMPLIFIED_CHINESE)
+    fun score(folder: JSONObject) = when (folder.optString("priority", "green")) {
+        "red" -> 4; "yellow" -> 3; "blue" -> 2; else -> 1
+    }
+    return folders.sortedWith { a, b ->
+        val priority = score(b) - score(a)
+        if (priority != 0) priority else names.compare(a.optString("name"), b.optString("name"))
+    }
+}
+
 @Composable
-private fun VaultPill(label: String, selected: Boolean, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(14.dp),
+private fun FolderPriorityPicker(value: String, onChange: (String) -> Unit) {
+    Spacer(Modifier.height(12.dp))
+    Text("优先级", style = MaterialTheme.typography.labelMedium)
+    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        listOf("red" to "红", "yellow" to "黄", "blue" to "蓝", "green" to "绿").forEach { (key, label) ->
+            FilterChip(selected = value == key, onClick = { onChange(key) }, label = { Text(label) })
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun VaultPill(label: String, selected: Boolean, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+    Surface(modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick), shape = RoundedCornerShape(14.dp),
         color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
         border = if (selected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant)) {
-        Text(label, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+        Text(label, modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             style = MaterialTheme.typography.bodyMedium, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -670,8 +754,8 @@ private fun EntryDetail(entry: JSONObject, onDismiss: () -> Unit, onEdit: () -> 
             }
         }
     }
-    if (confirmDelete) AlertDialog(onDismissRequest = { confirmDelete = false }, title = { Text("移入回收站？") },
-        text = { Text("这条记录之后仍可恢复。") }, confirmButton = { TextButton(onClick = onDelete) { Text("移入回收站") } },
+    if (confirmDelete) DenseDialog(onDismissRequest = { confirmDelete = false }, title = { Text("移入回收站？") },
+        text = { Text("这条记录之后仍可恢复。") }, confirmButton = { Button(onClick = onDelete) { Text("移入回收站") } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("取消") } })
 }
 
@@ -690,6 +774,7 @@ private fun DetailField(label: String, value: String, icon: Int, onClick: () -> 
 
 @Composable
 private fun EntryEditor(original: JSONObject, folders: List<JSONObject>, onDismiss: () -> Unit, onSave: (JSONObject) -> Unit) {
+    val screenHeight = LocalConfiguration.current.screenHeightDp
     var site by remember { mutableStateOf(original.optString("site")) }; var account by remember { mutableStateOf(original.optString("account")) }
     var password by remember { mutableStateOf(original.optString("password")) }; var url by remember { mutableStateOf(original.optString("url")) }
     var tags by remember { mutableStateOf(original.optString("tags")) }; var notes by remember { mutableStateOf(original.optString("notes")) }
@@ -702,16 +787,18 @@ private fun EntryEditor(original: JSONObject, folders: List<JSONObject>, onDismi
             .put("folderId", folder).put("priority", priority).put("favorite", favorite).put("pinned", pinned))
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), color = MaterialTheme.colorScheme.background) {
+        Surface(Modifier.fillMaxWidth(0.92f).height((screenHeight - 100).coerceIn(380, 680).dp),
+            shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.fillMaxSize()) {
-                Row(Modifier.fillMaxWidth().height(66.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onDismiss) { Icon(painterResource(R.drawable.tb_arrow_left), "返回") }
+                Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 18.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (original.optString("id").isEmpty()) "新建记录" else "编辑记录",
-                        style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onDismiss) { Icon(painterResource(R.drawable.tb_x), "关闭") }
                 }
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 22.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("登录信息", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("登录信息", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
                     EditField(site, { site = it }, "名称 *")
                     EditField(account, { account = it }, "账号")
                     EditField(password, { password = it }, "密码",
@@ -729,11 +816,11 @@ private fun EntryEditor(original: JSONObject, folders: List<JSONObject>, onDismi
                             }
                         })
                     EditField(url, { url = it }, "网址")
-                    Spacer(Modifier.height(12.dp))
-                    Text("整理", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    Text("整理", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                     Box {
                         Surface(onClick = { folderMenu = true }, shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface) {
-                            Row(Modifier.fillMaxWidth().height(66.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(painterResource(R.drawable.tb_folder), null, tint = MaterialTheme.colorScheme.secondary)
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
@@ -745,39 +832,40 @@ private fun EntryEditor(original: JSONObject, folders: List<JSONObject>, onDismi
                         }
                         DropdownMenu(folderMenu, onDismissRequest = { folderMenu = false }) {
                             DropdownMenuItem(text = { Text("未分组") }, onClick = { folder = ""; folderMenu = false })
-                            folders.forEach { f -> DropdownMenuItem(text = { Text(f.optString("name")) }, onClick = { folder = f.optString("id"); folderMenu = false }) }
+                            orderedFolders(folders).forEach { f -> DropdownMenuItem(text = { Text(f.optString("name")) }, onClick = { folder = f.optString("id"); folderMenu = false }) }
                         }
                     }
-                    Text("优先级", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("优先级", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("green" to "普通", "yellow" to "重要", "red" to "紧急").forEach { (value, label) ->
+                        listOf("red" to "红", "yellow" to "黄", "blue" to "蓝", "green" to "绿").forEach { (value, label) ->
                             VaultPill(label, priority == value) { priority = value }
                         }
                     }
                     Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface) {
                         Column {
-                            Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(painterResource(R.drawable.tb_star), null, tint = MaterialTheme.colorScheme.secondary)
                                 Spacer(Modifier.width(12.dp)); Text("加入收藏", modifier = Modifier.weight(1f))
                                 Switch(favorite, { favorite = it })
                             }
                             HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-                            Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(painterResource(R.drawable.tb_pin), null, tint = MaterialTheme.colorScheme.secondary)
                                 Spacer(Modifier.width(12.dp)); Text("置顶记录", modifier = Modifier.weight(1f))
                                 Switch(pinned, { pinned = it })
                             }
                         }
                     }
-                    Spacer(Modifier.height(12.dp))
-                    Text("补充信息", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    Text("补充信息", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                     EditField(tags, { tags = it }, "标签，以逗号分隔")
                     EditField(notes, { notes = it }, "备注", singleLine = false, minLines = 3)
-                    Spacer(Modifier.height(25.dp))
+                    Spacer(Modifier.height(12.dp))
                 }
-                Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp) {
-                    Button(onClick = save, enabled = site.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 12.dp).height(56.dp),
-                        shape = RoundedCornerShape(17.dp)) { Text("保存记录", fontWeight = FontWeight.Bold) }
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                Surface(color = MaterialTheme.colorScheme.surface) {
+                    Button(onClick = save, enabled = site.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp).height(48.dp),
+                        shape = RoundedCornerShape(15.dp)) { Text("保存记录", fontWeight = FontWeight.Bold) }
                 }
             }
         }
