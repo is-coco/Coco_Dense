@@ -20,7 +20,7 @@ android {
         applicationId = "com.coco.dense"
         minSdk = 31
         targetSdk = 35
-        val appVersion = providers.gradleProperty("appVersion").orElse("0.1.12").get()
+        val appVersion = providers.gradleProperty("appVersion").orElse("0.1.14").get()
         val parts = appVersion.split('.').map { it.toIntOrNull() ?: 0 }
         versionCode = (parts.getOrElse(0) { 0 } * 1_000_000) + (parts.getOrElse(1) { 0 } * 1_000) + parts.getOrElse(2) { 0 }
         versionName = appVersion

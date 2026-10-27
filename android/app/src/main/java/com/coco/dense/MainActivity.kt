@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -87,6 +88,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun App(repo: VaultRepository) {
     val context = LocalContext.current
@@ -99,6 +101,7 @@ private fun App(repo: VaultRepository) {
     var viewing by remember { mutableStateOf<JSONObject?>(null) }
     var message by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var syncRunning by remember { mutableStateOf(false) }
     var conflicts by remember { mutableStateOf<List<SyncConflict>>(emptyList()) }
     var choices by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
     var conflictAction by remember { mutableStateOf(SyncAction.QUICK) }
@@ -118,20 +121,23 @@ private fun App(repo: VaultRepository) {
     }
     val runSync: (SyncAction, SyncConfig?, Map<String, Boolean>) -> Unit = { action, candidate, selected ->
         runTask {
-            val result = withContext(Dispatchers.IO) {
-                if (candidate != null) sync.saveConfig(candidate)
-                if (action == SyncAction.DOWNLOAD) sync.download(selected) else sync.sync(selected)
-            }
-            if (result is SyncResult.NeedsChoice) {
-                conflictAction = action
-                conflicts = result.conflicts
-            } else if (result is SyncResult.Done) {
-                message = when (action) {
-                    SyncAction.DOWNLOAD -> "已下载并合并到本机，未上传云端（${result.entries} 条）"
-                    SyncAction.UPLOAD -> "已合并并上传云端（${result.entries} 条）"
-                    SyncAction.QUICK -> "双向同步完成（${result.entries} 条）"
+            syncRunning = true
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    if (candidate != null) sync.saveConfig(candidate)
+                    if (action == SyncAction.DOWNLOAD) sync.download(selected) else sync.sync(selected)
                 }
-            }
+                if (result is SyncResult.NeedsChoice) {
+                    conflictAction = action
+                    conflicts = result.conflicts
+                } else if (result is SyncResult.Done) {
+                    message = when (action) {
+                        SyncAction.DOWNLOAD -> "已下载并合并到本机，未上传云端（${result.entries} 条）"
+                        SyncAction.UPLOAD -> "已合并并上传云端（${result.entries} 条）"
+                        SyncAction.QUICK -> "双向同步完成（${result.entries} 条）"
+                    }
+                }
+            } finally { syncRunning = false }
         }
     }
     val afterMutation: () -> Unit = {
@@ -230,7 +236,9 @@ private fun App(repo: VaultRepository) {
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
-                0 -> VaultList(entries, repo.folders(), { viewing = it }, { value ->
+                0 -> PullToRefreshBox(isRefreshing = syncRunning, onRefresh = {
+                    if (!busy) runSync(SyncAction.QUICK, null, emptyMap())
+                }, modifier = Modifier.fillMaxSize()) { VaultList(entries, repo.folders(), { viewing = it }, { value ->
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("Coco Dense", value))
                     scope.launch { snackbar.showSnackbar("密码已复制，30 秒后清除剪贴板") }
@@ -239,7 +247,7 @@ private fun App(repo: VaultRepository) {
                     }, 30_000)
                 },
                     { folder -> runTask { withContext(Dispatchers.IO) { repo.putFolder(folder) }; afterMutation() } },
-                    { id -> runTask { withContext(Dispatchers.IO) { repo.removeFolder(id) }; afterMutation() } })
+                    { id -> runTask { withContext(Dispatchers.IO) { repo.removeFolder(id) }; afterMutation() } }) }
                 else -> SettingsPage(repo, sync, { importLauncher.launch(arrayOf("application/json", "*/*")) },
                     { exportLauncher.launch("Coco-Dense-vault.json") }, runTask, { message = it }, refresh,
                     { action, config -> runSync(action, config, emptyMap()) },
@@ -445,14 +453,11 @@ private fun VaultList(entries: List<JSONObject>, folders: List<JSONObject>, open
     var editingFolder by remember { mutableStateOf<JSONObject?>(null) }
     var priorityFilter by remember { mutableStateOf("") }
     var favoritesOnly by remember { mutableStateOf(false) }
-    var tagFilter by remember { mutableStateOf("") }
     var filtersOpen by remember { mutableStateOf(false) }
-    val tags = entries.flatMap { it.optString("tags").split(',').map(String::trim).filter(String::isNotEmpty) }.distinct().sorted()
     val shown = entries.filter {
         (selectedFolder.isEmpty() || it.optString("folderId") == selectedFolder) &&
             (priorityFilter.isEmpty() || it.optString("priority", "green") == priorityFilter) &&
             (!favoritesOnly || it.optBoolean("favorite")) &&
-            (tagFilter.isEmpty() || it.optString("tags").split(',').map(String::trim).contains(tagFilter)) &&
             (query.isBlank() || listOf("site", "account", "url", "tags").any { field -> it.optString(field).contains(query, true) })
     }.sortedWith(compareByDescending<JSONObject> { it.optBoolean("pinned") }.thenByDescending { it.optBoolean("favorite") }.thenBy { it.optString("site") })
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -475,10 +480,10 @@ private fun VaultList(entries: List<JSONObject>, folders: List<JSONObject>, open
                 }
             }
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("${shown.size} 条记录", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text("${shown.size} 条记录", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 Spacer(Modifier.width(4.dp))
                 Box {
-                    IconButton(onClick = { filtersOpen = true }) { Icon(painterResource(R.drawable.tb_adjustments_horizontal), "筛选和分组") }
+                    IconButton(onClick = { filtersOpen = true }, modifier = Modifier.size(44.dp)) { Icon(painterResource(R.drawable.tb_adjustments_horizontal), "筛选和分组") }
                     DropdownMenu(expanded = filtersOpen, onDismissRequest = { filtersOpen = false }) {
                         DropdownMenuItem(text = { Text("新建分组") }, leadingIcon = { Icon(painterResource(R.drawable.tb_folder_plus), null) }, onClick = { newFolder = true; filtersOpen = false })
                         HorizontalDivider()
@@ -486,13 +491,13 @@ private fun VaultList(entries: List<JSONObject>, folders: List<JSONObject>, open
                         listOf("red" to "紧急", "yellow" to "重要").forEach { (value, label) ->
                             DropdownMenuItem(text = { Text(if (priorityFilter == value) "✓ $label" else label) }, onClick = { priorityFilter = if (priorityFilter == value) "" else value; filtersOpen = false })
                         }
-                        if (priorityFilter.isNotEmpty() || favoritesOnly || tagFilter.isNotEmpty())
-                            DropdownMenuItem(text = { Text("清除筛选") }, onClick = { priorityFilter = ""; favoritesOnly = false; tagFilter = ""; filtersOpen = false })
+                        if (priorityFilter.isNotEmpty() || favoritesOnly)
+                            DropdownMenuItem(text = { Text("清除筛选") }, onClick = { priorityFilter = ""; favoritesOnly = false; filtersOpen = false })
                     }
                 }
             }
         }
-        LazyRow(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyRow(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item { VaultPill("全部", selectedFolder.isEmpty() && !favoritesOnly) { selectedFolder = ""; favoritesOnly = false } }
             item { VaultPill("收藏", favoritesOnly) { favoritesOnly = !favoritesOnly } }
             items(folders, key = { it.optString("id") }) { folder -> VaultPill(folder.optString("name"), selectedFolder == folder.optString("id")) {
@@ -503,10 +508,7 @@ private fun VaultList(entries: List<JSONObject>, folders: List<JSONObject>, open
                 folderName = editingFolder?.optString("name") ?: ""
             } }
         }
-        if (tags.isNotEmpty()) LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(tags) { tag -> VaultPill("#$tag", tagFilter == tag) { tagFilter = if (tagFilter == tag) "" else tag } }
-        }
-        if (shown.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        if (shown.isEmpty()) Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 24.dp)) {
                 Box(Modifier.size(64.dp).background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(20.dp)), contentAlignment = Alignment.Center) {
                     Icon(painterResource(if (entries.isEmpty()) R.drawable.tb_key else R.drawable.tb_search), null,
@@ -518,7 +520,7 @@ private fun VaultList(entries: List<JSONObject>, folders: List<JSONObject>, open
                 Text(if (entries.isEmpty()) "点击右下角的 +，添加第一个账号。" else "换个关键词，或清除当前筛选。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
             }
-        } else LazyColumn(contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 30.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        } else LazyColumn(contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 30.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             items(shown, key = { it.optString("id") }) { entry ->
                 Card(onClick = { open(entry) }, modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant)) {
@@ -555,8 +557,8 @@ private fun VaultPill(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(onClick = onClick, shape = RoundedCornerShape(14.dp),
         color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
         border = if (selected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant)) {
-        Text(label, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            style = MaterialTheme.typography.labelLarge, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+        Text(label, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.bodyMedium, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
